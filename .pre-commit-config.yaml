@@ -1,0 +1,13 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: local
+    hooks:
+      - id: block-secrets-toml
+        name: Block committing .streamlit/secrets.toml
+        entry: .hooks/block_secrets.sh
+        language: system
+        pass_filenames: false

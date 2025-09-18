@@ -333,5 +333,3 @@ def build_client_from_env() -> SnowflakeCortexAgentClient:
     if not url or not token:
         raise RuntimeError("SNOWFLAKE_ACCOUNT_URL and SNOWFLAKE_AUTH_TOKEN must be set")
     return SnowflakeCortexAgentClient(url, token)
-
-

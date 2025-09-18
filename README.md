@@ -26,5 +26,3 @@ auth_token = "<bearer_token>"
 
 Threads:
 - Use the sidebar to list, load, or create threads. Conversations will use the selected thread when both `thread_id` and `parent_message_id` are provided.
-
-

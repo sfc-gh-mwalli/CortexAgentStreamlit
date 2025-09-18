@@ -10,5 +10,3 @@ python -m pip install -r requirements.txt
 
 # Run Streamlit (configure Account URL and Token in the sidebar or via st.secrets)
 exec streamlit run app.py
-
-
