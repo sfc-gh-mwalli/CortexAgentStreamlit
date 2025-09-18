@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+.venv
+
+# Streamlit
+.streamlit/
+
+# OS / Editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Data / artifacts (optional)
+# data/
+# screenshots/
