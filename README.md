@@ -1,5 +1,9 @@
 # Snowflake Cortex Agent Streamlit UI
 
+## Screenshot
+
+![UI Screenshot](assets/ui-screenshot.png)
+
 Run locally:
 
 ```bash
