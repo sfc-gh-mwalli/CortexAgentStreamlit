@@ -41,6 +41,8 @@ class SnowflakeCortexAgentClient:
             pass
         self.timeout_seconds = timeout_seconds
         self.read_timeout_seconds = read_timeout_seconds
+        # Track the last HTTP error encountered so the UI can surface it
+        self.last_error: Optional[str] = None
 
     # Threads API
     def create_thread(self, application_name: str = "hcls_agent_st") -> Optional[str]:
@@ -52,7 +54,8 @@ class SnowflakeCortexAgentClient:
             data = resp.json()
             return data.get('thread_id')
         except requests.RequestException as exc:
-            logger.error("create_thread failed: %s", self._format_http_error(exc))
+            self.last_error = self._format_http_error(exc)
+            logger.error("create_thread failed: %s", self.last_error)
             return None
 
     def list_threads(self, limit: int = 20, origin_application: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -71,7 +74,8 @@ class SnowflakeCortexAgentClient:
                 return data
             return []
         except requests.RequestException as exc:
-            logger.error("list_threads failed: %s", self._format_http_error(exc))
+            self.last_error = self._format_http_error(exc)
+            logger.error("list_threads failed: %s", self.last_error)
             return []
 
     def get_thread(self, thread_id: str) -> Optional[Dict[str, Any]]:
@@ -81,7 +85,8 @@ class SnowflakeCortexAgentClient:
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as exc:
-            logger.error("get_thread failed: %s", self._format_http_error(exc))
+            self.last_error = self._format_http_error(exc)
+            logger.error("get_thread failed: %s", self.last_error)
             return None
 
     def describe_thread(
@@ -100,7 +105,8 @@ class SnowflakeCortexAgentClient:
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as exc:
-            logger.error("describe_thread failed: %s", self._format_http_error(exc))
+            self.last_error = self._format_http_error(exc)
+            logger.error("describe_thread failed: %s", self.last_error)
             return None
 
     def delete_thread(self, thread_id: str) -> bool:
@@ -110,7 +116,8 @@ class SnowflakeCortexAgentClient:
             resp.raise_for_status()
             return True
         except requests.RequestException as exc:
-            logger.error("delete_thread failed: %s", self._format_http_error(exc))
+            self.last_error = self._format_http_error(exc)
+            logger.error("delete_thread failed: %s", self.last_error)
             return False
 
     # Agent run APIs
@@ -181,9 +188,11 @@ class SnowflakeCortexAgentClient:
                         if content:
                             yield {"type": "content", "content": content}
         except requests.ReadTimeout as exc:
-            yield {"type": "error", "error": f"Stream read timeout: {exc}"}
+            self.last_error = f"Stream read timeout: {exc}"
+            yield {"type": "error", "error": self.last_error}
         except requests.RequestException as exc:
-            yield {"type": "error", "error": self._format_http_error(exc)}
+            self.last_error = self._format_http_error(exc)
+            yield {"type": "error", "error": self.last_error}
 
     # Internal helpers
     def _post_json(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -192,7 +201,8 @@ class SnowflakeCortexAgentClient:
             resp.raise_for_status()
             return {"status": "success", "json": resp.json()}
         except requests.RequestException as exc:
-            return {"status": "error", "error": self._format_http_error(exc)}
+            self.last_error = self._format_http_error(exc)
+            return {"status": "error", "error": self.last_error}
 
     def _post_sse(self, url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -217,7 +227,8 @@ class SnowflakeCortexAgentClient:
                             full_text.append(content)
                 return {"status": "success", "response": "".join(full_text), "events": events}
         except requests.RequestException as exc:
-            return {"status": "error", "error": self._format_http_error(exc)}
+            self.last_error = self._format_http_error(exc)
+            return {"status": "error", "error": self.last_error}
 
     def _iter_sse(self, resp: requests.Response) -> Generator[Optional[Dict[str, Any]], None, None]:
         buffer_lines: List[str] = []

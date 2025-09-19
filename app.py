@@ -66,6 +66,11 @@ def sidebar_threads(client) -> None:
     st.sidebar.header("Threads")
     # List all threads across applications so user can discover app names
     threads = client.list_threads(limit=50)
+    # If an HTTP error occurred, surface it prominently
+    if getattr(client, "last_error", None):
+        st.sidebar.error(
+            "Unable to reach Cortex Agent. Check network, firewall, or credentials.\n\n" + str(client.last_error)
+        )
     thread_options: List[Dict[str, str]] = []
     for t in threads:
         if not isinstance(t, dict):
@@ -85,7 +90,10 @@ def sidebar_threads(client) -> None:
             "value": str(t.get('thread_id')),
         })
     if not threads:
-        st.sidebar.info("No threads found. Create one below.")
+        if getattr(client, "last_error", None):
+            st.sidebar.warning("No threads available due to a connection error above.")
+        else:
+            st.sidebar.info("No threads found. Create one below.")
 
     selected = st.sidebar.selectbox(
         "Select a thread",
