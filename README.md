@@ -12,12 +12,8 @@ python -m pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Configuration:
-- In the Streamlit sidebar, enter:
-  - Account URL (e.g., https://<account>.snowflakecomputing.com)
-  - Auth token (Bearer token)
-  - Database, Schema, Agent name
-- When running as Streamlit in Snowflake, set these via `st.secrets`:
+Configuration (via `st.secrets`):
+Create `.streamlit/secrets.toml` with your connection details:
 
 ```toml
 # .streamlit/secrets.toml
