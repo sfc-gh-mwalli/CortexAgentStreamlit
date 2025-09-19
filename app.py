@@ -21,9 +21,48 @@ def ensure_session_state() -> None:
     if "loaded_thread_id" not in st.session_state:
         st.session_state.loaded_thread_id = None
     # Always show detailed events now
+def _apply_vega_white_theme(spec: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure charts render with a white background and dark text for readability.
+
+    This function makes a shallow copy of the provided Vega-Lite spec and applies
+    defaults only when not explicitly set by the incoming spec.
+    """
+    themed = dict(spec) if isinstance(spec, dict) else {}
+    # Background
+    if not themed.get("background"):
+        themed["background"] = "#ffffff"
+    # Config
+    cfg = dict(themed.get("config", {}))
+    axis_cfg = dict(cfg.get("axis", {}))
+    axis_cfg.setdefault("labelColor", "#0f172a")
+    axis_cfg.setdefault("titleColor", "#0f172a")
+    axis_cfg.setdefault("gridColor", "#e5e7eb")
+    cfg["axis"] = axis_cfg
+    legend_cfg = dict(cfg.get("legend", {}))
+    legend_cfg.setdefault("labelColor", "#0f172a")
+    legend_cfg.setdefault("titleColor", "#0f172a")
+    cfg["legend"] = legend_cfg
+    title_cfg = dict(cfg.get("title", {}))
+    title_cfg.setdefault("color", "#0f172a")
+    cfg["title"] = title_cfg
+    view_cfg = dict(cfg.get("view", {}))
+    view_cfg.setdefault("stroke", "#e5e7eb")
+    cfg["view"] = view_cfg
+    themed["config"] = cfg
+    return themed
+
 
 
 def sidebar_threads(client) -> None:
+    # App brand in sidebar
+    st.sidebar.markdown(
+        """
+        <div class='brand-title'>❄️ Cortex HCLS Agent</div>
+        <div class='brand-subtitle'>Snowflake Agent REST API Streamlit Example</div>
+        <hr style='border: 0; border-top: 1px solid #1f2937; margin: 8px 0 12px 0;' />
+        """,
+        unsafe_allow_html=True,
+    )
     st.sidebar.header("Threads")
     # List all threads across applications so user can discover app names
     threads = client.list_threads(limit=50)
@@ -128,33 +167,33 @@ def sidebar_threads(client) -> None:
         st.session_state.loaded_thread_id = selected
 
     # Inline thread actions under dropdown
-    col_new, col_del = st.sidebar.columns(2)
-    with col_new:
-        if st.button("New thread"):
+    # Actions in the left navigation (sidebar)
+    new_clicked = st.sidebar.button("＋ New thread", use_container_width=True)
+    if new_clicked:
             # Use origin app name from session (set in Connection section)
             current_origin = st.session_state.get("origin_application", "demo")
             new_id = client.create_thread(current_origin)
             if new_id:
-                st.success(f"Created thread {new_id}")
+                st.sidebar.info(f"Created thread {new_id}")
                 st.session_state.thread_id = str(new_id)
                 st.session_state.parent_message_id = "0"
                 st.session_state.messages = []
                 st.session_state.loaded_thread_id = str(new_id)
             else:
                 st.error("Failed to create thread")
-    with col_del:
-        if st.session_state.thread_id and st.button("Delete current thread"):
-            ok = client.delete_thread(st.session_state.thread_id)
-            if ok:
-                st.success("Thread deleted")
-                st.session_state.thread_id = None
-                st.session_state.parent_message_id = None
-                st.session_state.messages = []
-                st.session_state.loaded_thread_id = None
-                # Refresh sidebar threads list
-                st.rerun()
-            else:
-                st.error("Failed to delete thread")
+    del_clicked = st.sidebar.button("🗑 Delete current thread", disabled=not st.session_state.thread_id, use_container_width=True)
+    if del_clicked and st.session_state.thread_id:
+        ok = client.delete_thread(st.session_state.thread_id)
+        if ok:
+            st.sidebar.info("Thread deleted")
+            st.session_state.thread_id = None
+            st.session_state.parent_message_id = None
+            st.session_state.messages = []
+            st.session_state.loaded_thread_id = None
+            # Refresh sidebar threads list
+            st.rerun()
+        else:
+            st.error("Failed to delete thread")
 
     # View options removed; detailed events always displayed
 
@@ -176,15 +215,202 @@ def _get_secret(key: str, fallback: str = "") -> str:
 def main() -> None:
     ensure_session_state()
 
-    st.title("Cortex HCLS Agent")
-    st.caption("Snowflake Agent REST API")
-    # Light styling for a less boring UI
+    # Light styling for a more modern UI
     st.markdown(
         """
         <style>
-        .thinking { color: #a855f7; }
-        .status-line { color: #0ea5e9; font-size: 0.9rem; }
+        body, .stApp { background: #ffffff; color: #0f172a; }
+        .brand-title { font-weight: 800; font-size: 1.05rem; margin-bottom: 2px; letter-spacing: .1px; color: #0f172a; }
+        .brand-subtitle { color: #94a3b8; font-size: 0.85rem; margin-bottom: 2px; }
+        .stButton>button { border-radius: 10px; border: 1px solid #e5e7eb; background: #ffffff; color: #0f172a; transition: all .15s ease; }
+        .stButton>button:hover { box-shadow: 0 6px 14px rgba(15,23,42,0.10); border-color: #cbd5e1; }
+        /* Sidebar white background and controls */
+        section[data-testid="stSidebar"] { background: #ffffff !important; }
+        section[data-testid="stSidebar"] > div { background: #ffffff !important; }
+        section[data-testid="stSidebar"] .block-container { padding-top: 0.75rem; }
+        section[data-testid="stSidebar"] .stButton { width: 100%; }
+        section[data-testid="stSidebar"] .stButton>button { background: transparent; border: none; color: #0f172a; border-radius: 8px; padding: 8px 10px; width: 100%; text-align: left; display: flex; justify-content: flex-start; align-items: center; gap: 8px; margin: 0; }
+        section[data-testid="stSidebar"] .stButton>button:hover { background: #eff6ff; box-shadow: inset 0 0 0 1px #bfdbfe; }
+        section[data-testid="stSidebar"] [data-baseweb="select"] { border-radius: 10px; }
+        /* Sidebar select (thread dropdown): white bg, dark text */
+        section[data-testid="stSidebar"] [data-baseweb="select"] > div { background: #ffffff !important; border: 1px solid #e5e7eb !important; color: #0f172a !important; }
+        section[data-testid="stSidebar"] [data-baseweb="select"] [role="combobox"],
+        section[data-testid="stSidebar"] [data-baseweb="select"] input { background: #ffffff !important; color: #0f172a !important; }
+        section[data-testid="stSidebar"] [data-baseweb="select"] svg { fill: #0f172a !important; }
+        /* Open menu panel */
+        [data-baseweb="menu"] [role="listbox"],
+        [role="listbox"][aria-label="listbox"] { background: #ffffff !important; color: #0f172a !important; }
+        [data-baseweb="menu"] [role="option"] { color: #0f172a !important; }
+        section[data-testid="stSidebar"] * { color: #0f172a !important; }
+        section[data-testid="stSidebar"] .stCaption, section[data-testid="stSidebar"] .stMarkdown p { color: #64748b !important; }
+        .stSelectbox [data-baseweb="select"] { border-radius: 10px; }
+        .welcome { max-width: 900px; margin: 10vh auto 0 auto; }
+        .welcome .wl-title { font-size: 2.4rem; font-weight: 800; color: #0f172a; margin: 0 0 8px 0; letter-spacing: .2px; }
+        .welcome .wl-sub { font-size: 2.2rem; font-weight: 800; margin: 0 0 18px 0; }
+        .welcome .gradient { background: none; color: #0f172a; }
+        .welcome p { font-size: 1.06rem; line-height: 1.65; color: #334155; }
+        .thinking { color: #0ea5e9; }
+        .status-line { color: #0f172a; font-size: 0.9rem; }
         .notice { color: #64748b; font-size: 0.9rem; }
+        section[data-testid="stSidebar"] .stButton>button:hover,
+        section[data-testid="stSidebar"] [data-baseweb=select]:hover { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(147,197,253,0.35); }
+        /* Sidebar collapse/expand controls - always visible */
+        button[aria-label*="sidebar" i],
+        button[title*="sidebar" i],
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="stSidebarCollapseButton"],
+        [data-testid*="CollapsedControl" i],
+        [data-testid*="collapse" i],
+        [data-testid*="SidebarCollapse" i] {
+          opacity: 1 !important;
+          background: transparent !important;
+          color: #0f172a !important;
+          border: none !important;
+          box-shadow: none !important;
+          visibility: visible !important;
+          pointer-events: auto !important;
+        }
+        [data-testid="stSidebarCollapsedControl"] > *,
+        [data-testid="stSidebarCollapseButton"] > *,
+        [data-testid*="CollapsedControl" i] > * { background: transparent !important; }
+        button[aria-label*="sidebar" i] svg,
+        button[title*="sidebar" i] svg,
+        [data-testid="stSidebarCollapsedControl"] svg,
+        [data-testid="stSidebarCollapseButton"] svg,
+        [data-testid*="CollapsedControl" i] svg { fill: #0f172a !important; stroke: #0f172a !important; opacity: 1 !important; }
+        /* Make material icon text for expand visible */
+        [data-testid="stSidebarCollapsedControl"] [data-testid="stIconMaterial"],
+        [data-testid*="CollapsedControl" i] [data-testid="stIconMaterial"],
+        button[aria-label*="sidebar" i] [data-testid="stIconMaterial"],
+        button[title*="sidebar" i] [data-testid="stIconMaterial"] {
+          color: #0f172a !important;
+          opacity: 1 !important;
+        }
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid*="CollapsedControl" i] { z-index: 9999 !important; }
+        /* Global material icon color so expand arrow is visible even in dark color-scheme */
+        [data-testid="stIconMaterial"] { color: #0f172a !important; opacity: 1 !important; }
+        /* Streamlit top-right 3-dot menu: force dark text on white */
+        [data-baseweb="popover"] { color-scheme: light !important; color: #0f172a !important; }
+        [data-baseweb="popover"] [role="menu"],
+        [data-baseweb="popover"] [role="listbox"],
+        [data-baseweb="popover"] [data-testid="stActionMenu"],
+        [role="menu"][class] {
+          background: #ffffff !important;
+          color: #0f172a !important;
+          border: 1px solid #e5e7eb !important;
+        }
+        [data-baseweb="popover"] ul { background: #ffffff !important; }
+        [data-baseweb="popover"] li { background: #ffffff !important; }
+        [data-baseweb="popover"] [role="menuitem"],
+        [data-baseweb="popover"] [role="menuitem"] * { background: #ffffff !important; color: #0f172a !important; }
+        [data-baseweb="popover"] *,
+        [data-baseweb="popover"] [role="menu"] *,
+        [data-baseweb="popover"] [role="listbox"] *,
+        [role="menu"][class] *,
+        body > div [data-baseweb="popover"] ul li span {
+          color: #0f172a !important;
+        }
+        /* Ensure individual menu items (including Developer options) are visible */
+        [data-baseweb="popover"] [role="menu"] li,
+        [data-baseweb="popover"] [role="menu"] li *,
+        [data-baseweb="popover"] li.e8lvnlb5,
+        [data-baseweb="popover"] li.e8lvnlb5 * {
+          color: #0f172a !important;
+        }
+        /* Force the bottom Developer options text to dark explicitly */
+        [data-baseweb="popover"] span.e8lvnlb6,
+        [data-baseweb="popover"] span.st-emotion-cache-1cupxou,
+        [data-baseweb="popover"] ul li span { color: #0f172a !important; fill: #0f172a !important; }
+        /* As a last resort, override deep child path */
+        [data-baseweb="popover"] ul ul li > span,
+        body > div > div > div > div > div > div > ul ul li > span { color: #0f172a !important; }
+        [data-baseweb="popover"] [role="menu"] li:hover { background: #f8fafc !important; }
+        /* Chat message cards */
+        .stChatMessage { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 12px; box-shadow: 0 6px 14px rgba(15,23,42,0.05); }
+        .stChatMessage div[data-testid="stMarkdownContainer"],
+        .stChatMessage p, .stChatMessage span, .stChatMessage li { color: #0f172a; }
+        /* Chat input: redesigned pill */
+        [data-testid="stChatInput"] { background: transparent !important; border: none !important; }
+        [data-testid="stChatInput"] > div {
+          background: #ffffff !important;
+          border: 1px solid #e5e7eb !important;
+          border-radius: 9999px !important;
+          box-shadow: 0 8px 22px rgba(15,23,42,0.06) !important;
+          padding-left: 8px !important;
+          padding-right: 8px !important;
+          max-width: 980px;
+          margin: 10px auto !important;
+          overflow: hidden !important;
+          display: flex; align-items: center; gap: 8px;
+        }
+        [data-testid="stChatInput"] textarea {
+          background: #ffffff !important;
+          border: none !important;
+          border-radius: 9999px !important;
+          padding: 16px 18px !important;
+          color: #0f172a !important;
+          caret-color: #0f172a !important;
+          font-size: 1rem !important;
+          line-height: 1.5 !important;
+          min-height: 52px !important;
+          flex: 1 1 auto; width: 100% !important;
+        }
+        [data-testid="stChatInput"] textarea:hover { border: none !important; }
+        [data-testid="stChatInput"] textarea:focus { outline: none !important; box-shadow: none !important; }
+        [data-testid="stChatInput"] textarea::placeholder { color: #94a3b8 !important; }
+        [data-testid="stChatInput"] * {
+          color: #0f172a !important;
+          fill: #0f172a !important;
+          background: transparent !important;
+          background-color: transparent !important;
+          background-image: none !important;
+        }
+        /* Submit icon/button - force transparent bg and blue icon */
+        [data-testid="stChatInput"] button,
+        [data-testid="stChatInput"] [role="button"] {
+          background: transparent !important;
+          border: 0 !important;
+          box-shadow: none !important;
+          border-radius: 9999px !important;
+          width: 48px; height: 48px;
+          display: flex; align-items: center; justify-content: center;
+          margin-left: 6px; margin-right: 6px;
+        }
+        [data-testid="stChatInput"] button *,
+        [data-testid="stChatInput"] [role="button"] * {
+          background: transparent !important;
+        }
+        [data-testid="stChatInput"] button::before,
+        [data-testid="stChatInput"] button::after,
+        [data-testid="stChatInput"] [role="button"]::before,
+        [data-testid="stChatInput"] [role="button"]::after { background: transparent !important; }
+        [data-testid="stChatInput"] button svg,
+        [data-testid="stChatInput"] [role="button"] svg {
+          fill: #0ea5e9 !important;
+          stroke: #0ea5e9 !important;
+          background: transparent !important;
+          background-color: transparent !important;
+          width: 28px; height: 28px;
+        }
+        [data-testid="stChatInput"] button svg path,
+        [data-testid="stChatInput"] button svg circle,
+        [data-testid="stChatInput"] button svg polygon,
+        [data-testid="stChatInput"] [role="button"] svg path,
+        [data-testid="stChatInput"] [role="button"] svg circle,
+        [data-testid="stChatInput"] [role="button"] svg polygon { fill: #0ea5e9 !important; stroke: #0ea5e9 !important; }
+        /* Remove any solid square in the icon */
+        [data-testid="stChatInput"] button svg rect,
+        [data-testid="stChatInput"] [role="button"] svg rect { fill: transparent !important; stroke: transparent !important; }
+        [data-testid="stChatInput"] button:hover svg,
+        [data-testid="stChatInput"] [role="button"]:hover svg { fill: #0284c7 !important; stroke: #0284c7 !important; }
+        [data-testid="stChatInput"] > div > div { background: transparent !important; }
+        /* Force bottom bar container to white */
+        [data-testid="stBottomBlockContainer"], footer { background: #ffffff !important; }
+        [data-testid="stBottomBlockContainer"] { border-top: 1px solid #f1f5f9; }
+        /* Remove dark bands at top/bottom */
+        [data-testid="stAppViewContainer"], [data-testid="stHeader"], footer { background: #ffffff !important; }
+        [data-testid="stHeader"] { border-bottom: 1px solid #f1f5f9; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -209,12 +435,20 @@ def main() -> None:
 
     # Welcome message (first load or after new thread creation when no messages yet)
     if not st.session_state.messages:
+        hour = datetime.now().hour
+        part = "morning" if 5 <= hour < 12 else ("afternoon" if 12 <= hour < 18 else "evening")
         st.markdown(
-            """
-Hello! I'm a healthcare data analyst with access to comprehensive healthcare data and several powerful tools to help you analyze patient information, clinical outcomes, and healthcare operations.
-
-How can I help you?
-            """
+            f"""
+            <div class='welcome'>
+              <div class='wl-title'>Good {part},</div>
+              <div class='wl-sub gradient'>What healthcare data questions can I answer?</div>
+              <p>
+                I'm a healthcare data analyst with access to comprehensive healthcare data and
+                powerful tools to analyze patient information, clinical outcomes, and healthcare operations.
+              </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
     # Chat input
@@ -255,6 +489,7 @@ How can I help you?
                         except Exception:
                             spec = None
                     if isinstance(spec, dict):
+                        spec = _apply_vega_white_theme(spec)
                         data_values = []
                         d = spec.get('data')
                         if isinstance(d, dict):
@@ -325,7 +560,7 @@ How can I help you?
                             thinking_buffer = [thinking_text]
                         if thinking_buffer:
                             thinking_container.markdown(
-                                f"<div class='notice'><strong>Thinking</strong></div><div class='status-line'>{''.join(thinking_buffer)}</div>",
+                                f"<div class='thinking'><strong>Thinking</strong></div><div class='status-line'>{''.join(thinking_buffer)}</div>",
                                 unsafe_allow_html=True,
                             )
                         last_event_time = time.time()
@@ -345,7 +580,7 @@ How can I help you?
                         if isinstance(delta, str):
                             thinking_buffer.append(delta)
                             thinking_container.markdown(
-                                f"<div class='notice'><strong>Thinking</strong></div><div class='status-line'>{''.join(thinking_buffer)}</div>",
+                                f"<div class='thinking'><strong>Thinking</strong></div><div class='status-line'>{''.join(thinking_buffer)}</div>",
                                 unsafe_allow_html=True,
                             )
                             last_event_time = time.time()
@@ -405,6 +640,7 @@ How can I help you?
                                             spec = j
                                     # Render if we have a plausible spec
                                     if isinstance(spec, dict) and (spec.get('mark') or spec.get('encoding') or spec.get('$schema')):
+                                        spec = _apply_vega_white_theme(spec)
                                         data_values = []
                                         data_field = spec.get('data')
                                         if isinstance(data_field, dict):
