@@ -277,6 +277,10 @@ def main() -> None:
         .thinking { color: #0ea5e9; }
         .status-line { color: #0f172a; font-size: 0.9rem; }
         .notice { color: #64748b; font-size: 0.9rem; }
+        /* Alerts: compact, readable on white */
+        .stAlert div[role="alert"] { background: #ffffff !important; color: #0f172a !important; border: 1px solid #fecaca !important; border-radius: 10px !important; }
+        .stAlert p { margin: 0 !important; }
+        .stAlert { margin: 8px 0 !important; }
         section[data-testid="stSidebar"] .stButton>button:hover,
         section[data-testid="stSidebar"] [data-baseweb=select]:hover { border-color: #93c5fd; box-shadow: 0 0 0 3px rgba(147,197,253,0.35); }
         /* Sidebar collapse/expand controls - always visible */
