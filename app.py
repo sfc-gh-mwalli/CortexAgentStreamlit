@@ -472,8 +472,7 @@ def main() -> None:
         state_param = _get1("state")
         cv_param = _get1("cv")
         if code_param and oauth_client_id and oauth_redirect_uri and account_url:
-            # If no code_verifier in URL, try to recover it from localStorage via a tiny JS shim
-            # 1) Try to decode verifier embedded in state (dev convenience)
+            # If no code_verifier in URL, try to recover it from embedded state (dev convenience)
             if not cv_param and state_param:
                 try:
                     padded = state_param + "=" * (-len(state_param) % 4)
@@ -483,29 +482,8 @@ def main() -> None:
                         cv_param = obj.get("cv")
                 except Exception:
                     pass
-            # 2) If still missing, attempt client-side recovery from localStorage
-            if not cv_param and state_param:
-                components.html(
-                    f"""
-                    <script>
-                    (function(){{
-                      try {{
-                        var u = new URL(window.location.href);
-                        var st = u.searchParams.get('state');
-                        if (st) {{
-                          var cv = (window.top || window).localStorage.getItem('sf_pkce_' + st);
-                          if (cv && !u.searchParams.get('cv')) {{
-                            u.searchParams.set('cv', cv);
-                            (window.top || window).location.replace(u.toString());
-                          }}
-                        }}
-                      }} catch(e) {{}}
-                    }})();
-                    </script>
-                    """,
-                    height=0,
-                )
-                st.stop()
+            # NOTE: do not attempt script-driven top-window navigation here; it may be sandboxed.
+            # If still missing, we prompt the user to retry sign-in.
             # Proceed if we have a verifier
             if cv_param:
                 try:
@@ -540,18 +518,16 @@ def main() -> None:
                 state_obj = {"s": state_val, "cv": pair["code_verifier"]}
                 enc_state = base64.urlsafe_b64encode(_json.dumps(state_obj).encode()).decode().rstrip("=")
                 auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope=oauth_scope, state=enc_state)
-                # Persist verifier in browser and redirect
+                # Only store verifier (no script navigation to avoid sandbox); render a direct link
                 components.html(
                     f"""
                     <script>
-                      try {{
-                        (window.top || window).localStorage.setItem('sf_pkce_{state_val}', '{pair["code_verifier"]}');
-                      }} catch (e) {{}}
-                      (window.top || window).location.href = '{auth_url}';
+                      try {{ (window.top || window).localStorage.setItem('sf_pkce_{state_val}', '{pair["code_verifier"]}'); }} catch (e) {{}}
                     </script>
                     """,
                     height=0,
                 )
+                st.markdown(f"<a href='{auth_url}' target='_top'>Continue to Snowflake OAuth</a>", unsafe_allow_html=True)
                 st.stop()
         return
 
