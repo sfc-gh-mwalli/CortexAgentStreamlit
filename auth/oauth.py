@@ -45,7 +45,8 @@ def build_authorize_url(account_url: str, client_id: str, redirect_uri: str, cod
 
 
 def exchange_code_for_token(account_url: str, client_id: str, redirect_uri: str, code: str, code_verifier: str) -> OAuthTokens:
-    token_url = account_url.rstrip("/") + "/oauth/token"
+    # Snowflake OAuth token endpoint is /oauth/token-request
+    token_url = account_url.rstrip("/") + "/oauth/token-request"
     data = {
         "grant_type": "authorization_code",
         "code": code,
