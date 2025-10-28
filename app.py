@@ -552,8 +552,6 @@ def main() -> None:
                     """,
                     height=0,
                 )
-                # Fallback clickable link (in case browser blocks script-driven top navigation)
-                st.markdown(f"<a href='{auth_url}' target='_top'>Continue to Snowflake OAuth</a>", unsafe_allow_html=True)
                 st.stop()
         return
 
