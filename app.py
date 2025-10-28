@@ -442,6 +442,9 @@ def main() -> None:
     # OAuth client info
     oauth_client_id = _get_secret("OAUTH_CLIENT_ID", "")
     oauth_redirect_uri = _get_secret("OAUTH_REDIRECT_URI", "http://localhost:8501/")
+    oauth_scope_secret = _get_secret("OAUTH_SCOPE", "")
+    oauth_role_secret = _get_secret("OAUTH_ROLE", "")
+    oauth_scope = oauth_scope_secret or (f"SESSION:ROLE:{oauth_role_secret}" if oauth_role_secret else "SESSION:ROLE:PUBLIC")
     # PAT fallback
     auth_token = _get_secret("SNOWFLAKE_AUTH_TOKEN", "")
     db = _get_secret("SNOWFLAKE_AGENT_DATABASE", "SNOWFLAKE_INTELLIGENCE")
@@ -482,7 +485,7 @@ def main() -> None:
             if st.button("Sign in with Snowflake OAuth"):
                 pair = generate_pkce_pair()
                 st.session_state.oauth["code_verifier"] = pair["code_verifier"]
-                auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope="SESSION:ROLE-ANY")
+                auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope=oauth_scope)
                 st.experimental_set_query_params()  # drop any prior params
                 st.markdown(f"[Continue to Snowflake OAuth]({auth_url})")
         return
@@ -495,6 +498,8 @@ def main() -> None:
     with st.sidebar:
         if using_oauth:
             st.caption("Authenticated via Snowflake OAuth")
+            if oauth_scope:
+                st.caption(f"Scope: {oauth_scope}")
             if st.button("Sign out (clear token)"):
                 st.session_state.oauth.update({"access_token": None, "expires_at": None, "code_verifier": None})
                 st.experimental_set_query_params()
