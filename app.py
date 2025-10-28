@@ -9,6 +9,8 @@ from snowflake_cortex_agent_client import SnowflakeCortexAgentClient
 from auth.oauth import generate_pkce_pair, build_authorize_url, exchange_code_for_token
 import uuid
 import streamlit.components.v1 as components
+import base64
+import json as _json
 
 
 st.set_page_config(page_title="Snowflake Cortex Agent Chat", page_icon="❄️", layout="wide")
@@ -469,6 +471,16 @@ def main() -> None:
                 cv_from_state = st.session_state.oauth.get("verifiers", {}).get(state_param)
                 if cv_from_state:
                     cv_param = cv_from_state
+            # 1b) Try to decode verifier embedded in state (dev convenience)
+            if not cv_param and state_param:
+                try:
+                    padded = state_param + "=" * (-len(state_param) % 4)
+                    decoded = base64.urlsafe_b64decode(padded.encode()).decode()
+                    obj = _json.loads(decoded)
+                    if isinstance(obj, dict) and obj.get("cv"):
+                        cv_param = obj.get("cv")
+                except Exception:
+                    pass
             # 2) If still missing, attempt client-side recovery from localStorage
             if not cv_param and state_param:
                 components.html(
@@ -524,14 +536,17 @@ def main() -> None:
             if st.button("Sign in with Snowflake OAuth"):
                 pair = generate_pkce_pair()
                 state_val = uuid.uuid4().hex
-                auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope=oauth_scope, state=state_val)
+                # Embed verifier in state (base64url JSON) as a dev fallback
+                state_obj = {"s": state_val, "cv": pair["code_verifier"]}
+                enc_state = base64.urlsafe_b64encode(_json.dumps(state_obj).encode()).decode().rstrip("=")
+                auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope=oauth_scope, state=enc_state)
                 # Persist verifier in browser and redirect
                 try:
                     # server-side fallback mapping
                     if isinstance(st.session_state.oauth, dict):
                         if not isinstance(st.session_state.oauth.get("verifiers"), dict):
                             st.session_state.oauth["verifiers"] = {}
-                        st.session_state.oauth["verifiers"][state_val] = pair["code_verifier"]
+                        st.session_state.oauth["verifiers"][enc_state] = pair["code_verifier"]
                 except Exception:
                     pass
                 components.html(
