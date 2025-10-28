@@ -7,6 +7,8 @@ import streamlit as st
 
 from snowflake_cortex_agent_client import SnowflakeCortexAgentClient
 from auth.oauth import generate_pkce_pair, build_authorize_url, exchange_code_for_token
+import uuid
+import streamlit.components.v1 as components
 
 
 st.set_page_config(page_title="Snowflake Cortex Agent Chat", page_icon="❄️", layout="wide")
@@ -457,18 +459,40 @@ def main() -> None:
     try:
         params = st.experimental_get_query_params()
         code_param = params.get("code", [None])[0]
+        state_param = params.get("state", [None])[0]
+        cv_param = params.get("cv", [None])[0]
         if code_param and oauth_client_id and oauth_redirect_uri and account_url:
-            cv = st.session_state.oauth.get("code_verifier") if isinstance(st.session_state.oauth, dict) else None
-            if not cv:
-                # ignore if we don't have matching verifier (refresh page or manual nav)
-                pass
-            else:
-                tokens = exchange_code_for_token(account_url, oauth_client_id, oauth_redirect_uri, code_param, cv)
+            # If no code_verifier in URL, try to recover it from localStorage via a tiny JS shim
+            if not cv_param and state_param:
+                components.html(
+                    f"""
+                    <script>
+                    (function(){{
+                      try {{
+                        var u = new URL(window.location.href);
+                        var st = u.searchParams.get('state');
+                        if (st) {{
+                          var cv = localStorage.getItem('sf_pkce_' + st);
+                          if (cv && !u.searchParams.get('cv')) {{
+                            u.searchParams.set('cv', cv);
+                            window.location.replace(u.toString());
+                          }}
+                        }}
+                      }} catch(e) {{}}
+                    }})();
+                    </script>
+                    """,
+                    height=0,
+                )
+                st.stop()
+            # Proceed if we have a verifier
+            if cv_param:
+                tokens = exchange_code_for_token(account_url, oauth_client_id, oauth_redirect_uri, code_param, cv_param)
                 st.session_state.oauth.update({
                     "access_token": tokens.access_token,
                     "expires_at": tokens.expires_at,
                 })
-                # Clear code from URL
+                # Clear query params
                 st.experimental_set_query_params()
     except Exception:
         pass
@@ -484,10 +508,21 @@ def main() -> None:
         if account_url and oauth_client_id and oauth_redirect_uri:
             if st.button("Sign in with Snowflake OAuth"):
                 pair = generate_pkce_pair()
-                st.session_state.oauth["code_verifier"] = pair["code_verifier"]
-                auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope=oauth_scope)
-                st.experimental_set_query_params()  # drop any prior params
-                st.markdown(f"[Continue to Snowflake OAuth]({auth_url})")
+                state_val = uuid.uuid4().hex
+                auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope=oauth_scope, state=state_val)
+                # Persist verifier in browser and redirect
+                components.html(
+                    f"""
+                    <script>
+                      try {{
+                        localStorage.setItem('sf_pkce_{state_val}', '{pair["code_verifier"]}');
+                      }} catch (e) {{}}
+                      window.location.href = '{auth_url}';
+                    </script>
+                    """,
+                    height=0,
+                )
+                st.stop()
         return
 
     # Build client with token provider so header stays current
