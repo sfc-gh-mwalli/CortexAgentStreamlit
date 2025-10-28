@@ -278,7 +278,7 @@ def main() -> None:
         .status-line { color: #0f172a; font-size: 0.9rem; }
         .notice { color: #64748b; font-size: 0.9rem; }
         /* Alerts: compact, readable on white */
-        .stAlert div[role="alert"] { background: #ffffff !important; color: #0f172a !important; border: 1px solid #fecaca !important; border-radius: 10px !important; }
+        .stAlert div[role="alert"] { background: #fff7f7 !important; color: #7f1d1d !important; border: 1px solid #fecaca !important; border-radius: 10px !important; }
         .stAlert p { margin: 0 !important; }
         .stAlert { margin: 8px 0 !important; }
         section[data-testid="stSidebar"] .stButton>button:hover,
@@ -569,7 +569,7 @@ def main() -> None:
                 st.caption(f"Scope: {oauth_scope}")
             if st.button("Sign out (clear token)"):
                 st.session_state.oauth.update({"access_token": None, "expires_at": None, "code_verifier": None})
-                st.experimental_set_query_params()
+                st.query_params.clear()
                 st.rerun()
         elif auth_token:
             st.caption("Using PAT from secrets")
