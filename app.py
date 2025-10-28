@@ -6,6 +6,7 @@ from datetime import datetime
 import streamlit as st
 
 from snowflake_cortex_agent_client import SnowflakeCortexAgentClient
+from auth.oauth import generate_pkce_pair, build_authorize_url, exchange_code_for_token
 
 
 st.set_page_config(page_title="Snowflake Cortex Agent Chat", page_icon="❄️", layout="wide")
@@ -20,6 +21,12 @@ def ensure_session_state() -> None:
         st.session_state.messages: List[Dict[str, Any]] = []
     if "loaded_thread_id" not in st.session_state:
         st.session_state.loaded_thread_id = None
+    if "oauth" not in st.session_state:
+        st.session_state.oauth = {
+            "access_token": None,
+            "expires_at": None,
+            "code_verifier": None,
+        }
     # Always show detailed events now
 def _apply_vega_white_theme(spec: Dict[str, Any]) -> Dict[str, Any]:
     """Ensure charts render with a white background and dark text for readability.
@@ -218,6 +225,12 @@ def _get_secret(key: str, fallback: str = "") -> str:
     except Exception:
         pass
     return fallback
+
+
+def _get_oauth_token() -> str:
+    o = st.session_state.get("oauth", {})
+    t = o.get("access_token")
+    return t or ""
 
 
 def main() -> None:
@@ -424,8 +437,12 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    # Read connection strictly from secrets
+    # Read base connection
     account_url = _get_secret("SNOWFLAKE_ACCOUNT_URL", "")
+    # OAuth client info
+    oauth_client_id = _get_secret("OAUTH_CLIENT_ID", "")
+    oauth_redirect_uri = _get_secret("OAUTH_REDIRECT_URI", "http://localhost:8501/")
+    # PAT fallback
     auth_token = _get_secret("SNOWFLAKE_AUTH_TOKEN", "")
     db = _get_secret("SNOWFLAKE_AGENT_DATABASE", "SNOWFLAKE_INTELLIGENCE")
     schema = _get_secret("SNOWFLAKE_AGENT_SCHEMA", "AGENTS")
@@ -433,13 +450,59 @@ def main() -> None:
     # Fixed origin application name for thread creation (from secrets or default)
     st.session_state["origin_application"] = _get_secret("SNOWFLAKE_ORIGIN_APPLICATION", "hcls_agent_st")
 
-    # Build client
-    if not account_url or not auth_token:
-        st.error("Missing connection secrets. Set SNOWFLAKE_ACCOUNT_URL and SNOWFLAKE_AUTH_TOKEN in st.secrets.")
+    # OAuth callback handling
+    try:
+        params = st.experimental_get_query_params()
+        code_param = params.get("code", [None])[0]
+        if code_param and oauth_client_id and oauth_redirect_uri and account_url:
+            cv = st.session_state.oauth.get("code_verifier") if isinstance(st.session_state.oauth, dict) else None
+            if not cv:
+                # ignore if we don't have matching verifier (refresh page or manual nav)
+                pass
+            else:
+                tokens = exchange_code_for_token(account_url, oauth_client_id, oauth_redirect_uri, code_param, cv)
+                st.session_state.oauth.update({
+                    "access_token": tokens.access_token,
+                    "expires_at": tokens.expires_at,
+                })
+                # Clear code from URL
+                st.experimental_set_query_params()
+    except Exception:
+        pass
+
+    # Decide credential source: OAuth token > PAT
+    effective_token = st.session_state.oauth.get("access_token") if isinstance(st.session_state.oauth, dict) else None
+    using_oauth = bool(effective_token)
+    bearer = effective_token or auth_token
+
+    if not account_url or not bearer:
+        st.error("Missing credentials. Configure Snowflake OAuth or provide SNOWFLAKE_AUTH_TOKEN in st.secrets.")
+        # Offer OAuth sign-in if client configured
+        if account_url and oauth_client_id and oauth_redirect_uri:
+            if st.button("Sign in with Snowflake OAuth"):
+                pair = generate_pkce_pair()
+                st.session_state.oauth["code_verifier"] = pair["code_verifier"]
+                auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope="SESSION:ROLE-ANY")
+                st.experimental_set_query_params()  # drop any prior params
+                st.markdown(f"[Continue to Snowflake OAuth]({auth_url})")
         return
-    client = SnowflakeCortexAgentClient(account_url=account_url, auth_token=auth_token)
+
+    # Build client with token provider so header stays current
+    client = SnowflakeCortexAgentClient(account_url=account_url, auth_token=bearer, token_provider=_get_oauth_token)
 
     sidebar_threads(client)
+    # Status chips
+    with st.sidebar:
+        if using_oauth:
+            st.caption("Authenticated via Snowflake OAuth")
+            if st.button("Sign out (clear token)"):
+                st.session_state.oauth.update({"access_token": None, "expires_at": None, "code_verifier": None})
+                st.experimental_set_query_params()
+                st.rerun()
+        elif auth_token:
+            st.caption("Using PAT from secrets")
+        else:
+            st.caption("Not authenticated")
 
     # Welcome message (first load or after new thread creation when no messages yet)
     if not st.session_state.messages:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, Generator, Iterable, List, Optional
+from typing import Any, Dict, Generator, Iterable, List, Optional, Callable
 
 import requests
 
@@ -18,6 +18,7 @@ class SnowflakeCortexAgentClient:
         auth_token: str,
         timeout_seconds: int = 300,
         read_timeout_seconds: int = 120,
+        token_provider: Optional[Callable[[], Optional[str]]] = None,
     ) -> None:
         normalized = account_url.strip()
         if normalized and not normalized.startswith(("http://", "https://")):
@@ -41,11 +42,13 @@ class SnowflakeCortexAgentClient:
             pass
         self.timeout_seconds = timeout_seconds
         self.read_timeout_seconds = read_timeout_seconds
+        self._token_provider = token_provider
         # Track the last HTTP error encountered so the UI can surface it
         self.last_error: Optional[str] = None
 
     # Threads API
     def create_thread(self, application_name: str = "hcls_agent_st") -> Optional[str]:
+        self._maybe_refresh_auth_header()
         url = f"{self.base_url}/api/v2/cortex/threads"
         payload = {"origin_application": application_name}
         try:
@@ -59,6 +62,7 @@ class SnowflakeCortexAgentClient:
             return None
 
     def list_threads(self, limit: int = 20, origin_application: Optional[str] = None) -> List[Dict[str, Any]]:
+        self._maybe_refresh_auth_header()
         url = f"{self.base_url}/api/v2/cortex/threads"
         try:
             params: Dict[str, Any] = {"limit": limit}
@@ -79,6 +83,7 @@ class SnowflakeCortexAgentClient:
             return []
 
     def get_thread(self, thread_id: str) -> Optional[Dict[str, Any]]:
+        self._maybe_refresh_auth_header()
         url = f"{self.base_url}/api/v2/cortex/threads/{thread_id}"
         try:
             resp = self.session.get(url, timeout=(10, self.read_timeout_seconds))
@@ -92,6 +97,7 @@ class SnowflakeCortexAgentClient:
     def describe_thread(
         self, thread_id: str, page_size: int = 50, last_message_id: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
+        self._maybe_refresh_auth_header()
         """Describe thread and return metadata plus a page of messages.
 
         Docs: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-agents-threads-rest-api#describe-thread
@@ -110,6 +116,7 @@ class SnowflakeCortexAgentClient:
             return None
 
     def delete_thread(self, thread_id: str) -> bool:
+        self._maybe_refresh_auth_header()
         url = f"{self.base_url}/api/v2/cortex/threads/{thread_id}"
         try:
             resp = self.session.delete(url, timeout=(10, self.read_timeout_seconds))
@@ -133,6 +140,7 @@ class SnowflakeCortexAgentClient:
         tool_choice: Optional[Dict[str, Any]] = None,
         stream: bool = True,
     ) -> Dict[str, Any]:
+        self._maybe_refresh_auth_header()
         url = f"{self.base_url}/api/v2/databases/{database}/schemas/{schema}/agents/{agent_name}:run"
         payload: Dict[str, Any] = {"messages": messages}
         if tool_choice is not None:
@@ -156,6 +164,7 @@ class SnowflakeCortexAgentClient:
         tool_choice: Optional[Dict[str, Any]] = None,
         yield_events: bool = False,
     ) -> Generator[Dict[str, Any], None, None]:
+        self._maybe_refresh_auth_header()
         url = f"{self.base_url}/api/v2/databases/{database}/schemas/{schema}/agents/{agent_name}:run"
         payload: Dict[str, Any] = {"messages": messages}
         if tool_choice is not None:
@@ -336,6 +345,17 @@ class SnowflakeCortexAgentClient:
                 text = "<no body>"
             return f"{base} | HTTP {resp.status_code}: {text[:2000]}"
         return base
+
+    def _maybe_refresh_auth_header(self) -> None:
+        if self._token_provider is None:
+            return
+        try:
+            token = self._token_provider()
+            if token:
+                self.session.headers['Authorization'] = f'Bearer {token}'
+        except Exception:
+            # non-fatal; existing header remains
+            pass
 
 
 def build_client_from_env() -> SnowflakeCortexAgentClient:
