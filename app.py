@@ -28,6 +28,7 @@ def ensure_session_state() -> None:
             "access_token": None,
             "expires_at": None,
             "code_verifier": None,
+            "verifiers": {},  # state -> code_verifier (server-side fallback)
         }
     # Always show detailed events now
 def _apply_vega_white_theme(spec: Dict[str, Any]) -> Dict[str, Any]:
@@ -463,6 +464,12 @@ def main() -> None:
         cv_param = params.get("cv", [None])[0]
         if code_param and oauth_client_id and oauth_redirect_uri and account_url:
             # If no code_verifier in URL, try to recover it from localStorage via a tiny JS shim
+            # 1) Try server-side fallback mapping first
+            if not cv_param and state_param and isinstance(st.session_state.oauth, dict):
+                cv_from_state = st.session_state.oauth.get("verifiers", {}).get(state_param)
+                if cv_from_state:
+                    cv_param = cv_from_state
+            # 2) If still missing, attempt client-side recovery from localStorage
             if not cv_param and state_param:
                 components.html(
                     f"""
@@ -492,8 +499,16 @@ def main() -> None:
                     "access_token": tokens.access_token,
                     "expires_at": tokens.expires_at,
                 })
+                # Clear used verifier from server-side map
+                try:
+                    if state_param and isinstance(st.session_state.oauth.get("verifiers"), dict):
+                        st.session_state.oauth["verifiers"].pop(state_param, None)
+                except Exception:
+                    pass
                 # Clear query params
                 st.experimental_set_query_params()
+            else:
+                st.info("Finishing sign-in… if this screen remains, try again or use the fallback link.")
     except Exception:
         pass
 
@@ -511,6 +526,14 @@ def main() -> None:
                 state_val = uuid.uuid4().hex
                 auth_url = build_authorize_url(account_url, oauth_client_id, oauth_redirect_uri, pair["code_challenge"], scope=oauth_scope, state=state_val)
                 # Persist verifier in browser and redirect
+                try:
+                    # server-side fallback mapping
+                    if isinstance(st.session_state.oauth, dict):
+                        if not isinstance(st.session_state.oauth.get("verifiers"), dict):
+                            st.session_state.oauth["verifiers"] = {}
+                        st.session_state.oauth["verifiers"][state_val] = pair["code_verifier"]
+                except Exception:
+                    pass
                 components.html(
                     f"""
                     <script>
