@@ -460,9 +460,14 @@ def main() -> None:
     # OAuth callback handling
     try:
         params = st.query_params
-        code_param = params.get("code", [None])[0]
-        state_param = params.get("state", [None])[0]
-        cv_param = params.get("cv", [None])[0]
+        def _get1(k: str):
+            v = params.get(k)
+            if isinstance(v, list):
+                return v[0]
+            return v
+        code_param = _get1("code")
+        state_param = _get1("state")
+        cv_param = _get1("cv")
         if code_param and oauth_client_id and oauth_redirect_uri and account_url:
             # If no code_verifier in URL, try to recover it from localStorage via a tiny JS shim
             # 1) Try to decode verifier embedded in state (dev convenience)
@@ -500,23 +505,21 @@ def main() -> None:
                 st.stop()
             # Proceed if we have a verifier
             if cv_param:
-                tokens = exchange_code_for_token(account_url, oauth_client_id, oauth_redirect_uri, code_param, cv_param)
-                st.session_state.oauth.update({
-                    "access_token": tokens.access_token,
-                    "expires_at": tokens.expires_at,
-                })
-                # Clear used verifier from server-side map
                 try:
-                    if state_param and isinstance(st.session_state.oauth.get("verifiers"), dict):
-                        st.session_state.oauth["verifiers"].pop(state_param, None)
-                except Exception:
-                    pass
-                # Clear query params
-                st.query_params.clear()
+                    tokens = exchange_code_for_token(account_url, oauth_client_id, oauth_redirect_uri, str(code_param), str(cv_param))
+                    st.session_state.oauth.update({
+                        "access_token": tokens.access_token,
+                        "expires_at": tokens.expires_at,
+                    })
+                    # Clear query params and re-render
+                    st.query_params.clear()
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"OAuth token exchange failed: {exc}")
             else:
-                st.info("Finishing sign-in… if this screen remains, try again or use the fallback link.")
-    except Exception:
-        pass
+                st.info("Finishing sign-in… if this screen remains, click Sign in again.")
+    except Exception as exc:
+        st.error(f"OAuth callback error: {exc}")
 
     # Decide credential source: OAuth token > PAT
     effective_token = st.session_state.oauth.get("access_token") if isinstance(st.session_state.oauth, dict) else None
