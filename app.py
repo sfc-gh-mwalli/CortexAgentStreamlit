@@ -447,8 +447,7 @@ def main() -> None:
     oauth_client_id = _get_secret("OAUTH_CLIENT_ID", "")
     oauth_redirect_uri = _get_secret("OAUTH_REDIRECT_URI", "http://localhost:8501/")
     oauth_scope_secret = _get_secret("OAUTH_SCOPE", "")
-    oauth_role_secret = _get_secret("OAUTH_ROLE", "")
-    oauth_scope = oauth_scope_secret or (f"SESSION:ROLE:{oauth_role_secret}" if oauth_role_secret else "SESSION:ROLE:PUBLIC")
+    oauth_scope = oauth_scope_secret or "SESSION:ROLE:PUBLIC"
     # PAT fallback
     auth_token = _get_secret("SNOWFLAKE_AUTH_TOKEN", "")
     db = _get_secret("SNOWFLAKE_AGENT_DATABASE", "SNOWFLAKE_INTELLIGENCE")
