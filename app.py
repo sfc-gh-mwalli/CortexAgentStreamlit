@@ -541,6 +541,17 @@ def main() -> None:
             st.caption("Authenticated via Snowflake OAuth")
             if oauth_scope:
                 st.caption(f"Scope: {oauth_scope}")
+            try:
+                exp = st.session_state.oauth.get("expires_at") if isinstance(st.session_state.oauth, dict) else None
+                if isinstance(exp, (int, float)):
+                    remaining = max(0, int(exp - time.time()))
+                    mins = remaining // 60
+                    if mins > 0:
+                        st.caption(f"Token expires in {mins} min")
+                    else:
+                        st.caption(f"Token expires in {remaining}s")
+            except Exception:
+                pass
             if st.button("Sign out (clear token)"):
                 st.session_state.oauth.update({"access_token": None, "expires_at": None, "code_verifier": None})
                 st.query_params.clear()
