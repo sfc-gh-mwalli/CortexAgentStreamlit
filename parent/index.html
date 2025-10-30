@@ -137,6 +137,18 @@ document.getElementById('signout').onclick = ()=>{
         const v = await genVerifier(); ls.set(KEYS.VERIFIER, v);
         const cc = await challengeFrom(v);
         window.location.assign(buildAuthorizeUrl(cc));
+      } else if (e.data && e.data.type === 'parent:signout'){
+        // Mirror click on Sign out
+        ls.del(KEYS.VERIFIER);
+        ls.del(KEYS.LAST_LOGIN);
+        try{ sessionStorage.removeItem('silent_tried'); }catch(err){}
+        try{
+          const u = new URL(cfg.childUrl);
+          u.searchParams.set('p_signout','1');
+          document.getElementById('child').src = u.toString();
+        }catch(err){}
+        status('Signed out in parent and child (from child request).');
+        document.getElementById('miniStatus').textContent = '';
       }
     }catch(err){}
   });
