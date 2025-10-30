@@ -27,10 +27,12 @@
 <iframe id="child" src="" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
 
 <script>
+
 const cfg = {
-  accountUrl: 'https://<ACCOUNT>.snowflakecomputing.com', // set for Snowflake OAuth prototype
-  clientId: '<OAUTH_CLIENT_ID>',
-  redirectUri: window.location.origin + '/oauth-callback',
+  accountUrl: 'https://wa31964.us-east-2.aws.snowflakecomputing.com', // no path, no trailing slash
+  clientId: 'BGJxYRrwWw7bcdjEptdCyCDICbQ=',
+  // Redirect back to THIS page so we can handle the code here
+  redirectUri: window.location.origin + '/parent/index.html',
   scope: 'SESSION:ROLE:PUBLIC',
   childOrigin: null,
 };
@@ -113,16 +115,14 @@ document.getElementById('refresh').onclick = async ()=>{ try{ await refreshToken
 // Handle callback
 (async function(){
   const u = new URL(window.location.href);
-  if(u.pathname.endsWith('/oauth-callback')){
-    const code = u.searchParams.get('code');
-    if(code){
-      try{
-        const v = ls.get(KEYS.VERIFIER);
-        await exchangeCode(code, v);
-        history.replaceState({}, document.title, '/');
-        status('Logged in. Token stored.');
-      }catch(e){ status('Token error: '+e); }
-    }
+  const code = u.searchParams.get('code');
+  if(code){
+    try{
+      const v = ls.get(KEYS.VERIFIER);
+      await exchangeCode(code, v);
+      history.replaceState({}, document.title, '/parent/index.html');
+      status('Logged in. Token stored.');
+    }catch(e){ status('Token error: '+e); }
   }
   // Initialize iframe
   const childUrl = document.getElementById('childUrl').value;
