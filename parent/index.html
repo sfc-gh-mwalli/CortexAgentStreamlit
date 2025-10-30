@@ -65,19 +65,8 @@ function buildAuthorizeUrl(challenge){
   return url.toString();
 }
 
-async function exchangeCode(code, verifier){
-  const tokenUrl = cfg.accountUrl.replace(/\/$/, '') + '/oauth/token-request';
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code, redirect_uri: cfg.redirectUri, client_id: cfg.clientId, code_verifier: verifier
-  });
-  const resp = await fetch(tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
-  if(!resp.ok){ throw new Error(await resp.text()); }
-  const tok = await resp.json();
-  const exp = Math.floor(Date.now()/1000) + (tok.expires_in||3600);
-  ls.set(KEYS.TOKENS, { access_token: tok.access_token, refresh_token: tok.refresh_token, expires_at: exp });
-  return tok;
-}
+// Note: Browser CORS blocks token exchange to Snowflake directly from the parent.
+// We delegate the code->token exchange to the child (Streamlit) via postMessage.
 
 async function refreshToken(){
   const t = ls.get(KEYS.TOKENS); if(!t?.refresh_token) throw new Error('No refresh_token');
@@ -119,9 +108,19 @@ document.getElementById('refresh').onclick = async ()=>{ try{ await refreshToken
   if(code){
     try{
       const v = ls.get(KEYS.VERIFIER);
-      await exchangeCode(code, v);
+      const f = document.getElementById('child');
+      const win = f && f.contentWindow;
+      if(win){
+        win.postMessage({
+          type:'auth:code', code,
+          code_verifier: v,
+          client_id: cfg.clientId,
+          redirect_uri: cfg.redirectUri,
+          account_url: cfg.accountUrl
+        }, cfg.childOrigin || '*');
+        status('Auth code sent to child for exchange');
+      }
       history.replaceState({}, document.title, '/parent/index.html');
-      status('Logged in. Token stored.');
     }catch(e){ status('Token error: '+e); }
   }
   // Initialize iframe

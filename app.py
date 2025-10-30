@@ -457,6 +457,16 @@ def main() -> None:
         try {
           if (allowed.length && !allowed.includes(e.origin)) return;
           const d = e.data || {};
+          if (d.type === 'auth:code' && d.code && d.code_verifier) {
+            const u = new URL(window.location.href);
+            u.searchParams.set('p_code', d.code);
+            u.searchParams.set('p_cv', d.code_verifier);
+            if (d.client_id) u.searchParams.set('p_cid', d.client_id);
+            if (d.redirect_uri) u.searchParams.set('p_ruri', d.redirect_uri);
+            if (d.account_url) u.searchParams.set('p_acc', d.account_url);
+            window.location.replace(u.toString());
+            return;
+          }
           if (d.type === 'auth:token' && d.access_token) {
             const u = new URL(window.location.href);
             u.searchParams.set('parent_token', d.access_token);
@@ -473,8 +483,51 @@ def main() -> None:
     ).replace("ALLOWED_PARENTS", allowed_js)
     components.html(receiver, height=0)
 
+    # Helper: token exchange via server-side request (avoids browser CORS)
+    def _exchange_code_for_token(acc_url: str, client_id: str, redirect_uri: str, code: str, verifier: str) -> Dict[str, Any]:
+        import requests
+        token_url = (acc_url.rstrip("/") + "/oauth/token-request")
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": verifier,
+        }
+        resp = requests.post(token_url, data=data, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
     # Consume parent token from query params
     try:
+        # If parent sent code+verifier, exchange here server-side
+        pc = st.query_params.get("p_code")
+        pv = st.query_params.get("p_cv")
+        pcid = st.query_params.get("p_cid")
+        pruri = st.query_params.get("p_ruri")
+        pacc = st.query_params.get("p_acc")
+        if isinstance(pc, list): pc = pc[0]
+        if isinstance(pv, list): pv = pv[0]
+        if isinstance(pcid, list): pcid = pcid[0]
+        if isinstance(pruri, list): pruri = pruri[0]
+        if isinstance(pacc, list): pacc = pacc[0]
+        if pc and pv and pcid and pruri and (pacc or account_url):
+            try:
+                tok = _exchange_code_for_token(pacc or account_url, pcid, pruri, pc, pv)
+                st.session_state.parent_token = tok.get("access_token")
+                # optional refresh storage
+                st.session_state.parent_refresh_token = tok.get("refresh_token")
+                # compute expires_at from expires_in
+                try:
+                    exp = int(time.time()) + int(tok.get("expires_in", 3600))
+                except Exception:
+                    exp = None
+                st.session_state.parent_token_expires = exp
+                st.query_params.clear()
+                st.rerun()
+            except Exception as exc:
+                st.error(f"OAuth token exchange failed in child: {exc}")
+
         pt = st.query_params.get("parent_token")
         pe = st.query_params.get("pt_exp")
         pt = pt[0] if isinstance(pt, list) else pt
