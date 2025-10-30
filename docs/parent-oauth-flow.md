@@ -31,7 +31,7 @@ sequenceDiagram
   C-->>U: Child authenticated and status shown
   C->>IdP: POST token endpoint for refresh token
   IdP-->>C: Return new access token and optional refresh token
-  C->>C: Update session; rerun
+  C->>C: Update session and rerun
 
   U->>C: Click child Sign out
   C->>C: Clear token state and rerun (no parent sign-out)
