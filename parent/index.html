@@ -18,19 +18,7 @@
   <span id="miniStatus" style="margin-left:12px; color:#64748b;"></span>
 
 </div>
-
-<details style="margin:8px 0 6px 0;">
-  <summary>Dev options</summary>
-  <label style="margin-top:8px;">Child URL</label>
-  <input id="childUrl" style="width:100%" value="http://localhost:8501/"/>
-  <div style="font-size:12px; color:#64748b; margin-top:4px;">Only adjust for local testing.</div>
-  <div style="height:8px"></div>
-  <div style="height:8px"></div>
-  <div id="devInfo" style="font-size:12px; color:#64748b; line-height:1.6;"></div>
-
-</details>
-
-
+<pre id="status"></pre>
 
 <iframe id="child" src="" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
 
@@ -42,6 +30,7 @@ const cfg = {
   // Redirect back to THIS page so we can handle the code here
   redirectUri: 'http://localhost:8000/parent/index.html',
   scope: 'SESSION:ROLE:DBA',
+  childUrl: 'http://localhost:8501/',
   childOrigin: null,
 };
 
@@ -87,8 +76,7 @@ document.getElementById('signout').onclick = ()=>{
   ls.del(KEYS.VERIFIER);
   ls.del(KEYS.LAST_LOGIN);
   try{
-    const base = document.getElementById('childUrl').value;
-    const u = new URL(base);
+    const u = new URL(cfg.childUrl);
     u.searchParams.set('p_signout','1');
     document.getElementById('child').src = u.toString();
   }catch(e){}
@@ -108,22 +96,8 @@ document.getElementById('signout').onclick = ()=>{
   // Reset silent reconnect flag after any auth response
   try { if (savedCode || err) sessionStorage.removeItem('silent_tried'); } catch(e) {}
 
-  // If no code and we haven't tried silent auth yet, attempt prompt=none
-  if(!savedCode && !err){
-    try{
-      const tried = sessionStorage.getItem('silent_tried') === '1';
-      if(!tried){
-        sessionStorage.setItem('silent_tried','1');
-        const v = await genVerifier(); ls.set(KEYS.VERIFIER, v);
-        const cc = await challengeFrom(v);
-        window.location.assign(buildAuthorizeUrl(cc, { prompt: 'none' }));
-        return; // navigation
-      }
-    }catch(e){}
-  }
-
   // Initialize iframe first so messages are delivered to the right context
-  const childUrl = document.getElementById('childUrl').value;
+  const childUrl = cfg.childUrl;
   const frame = document.getElementById('child');
   // If we already have a code, pass it via iframe URL so the child can read via st.query_params
   if(savedCode){
@@ -154,18 +128,16 @@ document.getElementById('signout').onclick = ()=>{
     status('Silent auth not available (interaction required).');
   }
 
-  // No message listener or token refresh in parent; child handles refresh.
-  // Populate Dev info panel
-  try{
-    const info = [];
-    const ts = ls.get(KEYS.LAST_LOGIN);
-    if(ts){
-      const mins = Math.floor((Date.now()-ts)/60000);
-      info.push('Last login: ' + new Date(ts).toLocaleString() + ` (${mins}m ago)`);
-    } else {
-      info.push('Last login: n/a');
-    }
-    document.getElementById('devInfo').textContent = info.join(' \n ');
-  }catch(e){}
+  // Listen for child reconnect requests
+  window.addEventListener('message', async (e)=>{
+    try{
+      if (e.source !== frame.contentWindow) return;
+      if (e.data && e.data.type === 'parent:reconnect'){
+        const v = await genVerifier(); ls.set(KEYS.VERIFIER, v);
+        const cc = await challengeFrom(v);
+        window.location.assign(buildAuthorizeUrl(cc));
+      }
+    }catch(err){}
+  });
 })();
 </script>

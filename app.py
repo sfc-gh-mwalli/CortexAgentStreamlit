@@ -4,6 +4,7 @@ from typing import Dict, Any, List
 from datetime import datetime
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from snowflake_cortex_agent_client import SnowflakeCortexAgentClient
 
@@ -118,7 +119,7 @@ def sidebar_threads(client, account_url: str) -> None:
         if getattr(client, "last_error", None):
             st.sidebar.warning("No threads available due to a connection error above.")
         else:
-            st.sidebar.info("No threads found. Create one below.")
+        st.sidebar.info("No threads found. Create one below.")
 
     selected = st.sidebar.selectbox(
         "Select a thread",
@@ -216,17 +217,17 @@ def sidebar_threads(client, account_url: str) -> None:
                 st.error("Failed to create thread")
     del_clicked = st.sidebar.button("🗑 Delete current thread", disabled=not st.session_state.thread_id, use_container_width=True)
     if del_clicked and st.session_state.thread_id:
-        ok = client.delete_thread(st.session_state.thread_id)
-        if ok:
+            ok = client.delete_thread(st.session_state.thread_id)
+            if ok:
             st.sidebar.info("Thread deleted")
-            st.session_state.thread_id = None
-            st.session_state.parent_message_id = None
-            st.session_state.messages = []
-            st.session_state.loaded_thread_id = None
-            # Refresh sidebar threads list
-            st.rerun()
-        else:
-            st.error("Failed to delete thread")
+                st.session_state.thread_id = None
+                st.session_state.parent_message_id = None
+                st.session_state.messages = []
+                st.session_state.loaded_thread_id = None
+                # Refresh sidebar threads list
+                st.rerun()
+            else:
+                st.error("Failed to delete thread")
 
     # View options removed; detailed events always displayed
 
@@ -598,6 +599,10 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
+        with st.sidebar:
+            if st.button("Connect to Snowflake", use_container_width=True):
+                components.html("<script>try{(window.top||window.parent).postMessage({type:'parent:reconnect'}, '*');}catch(e){}<\/script>", height=0)
+                st.stop()
         return
 
     client = SnowflakeCortexAgentClient(account_url=account_url, auth_token=st.session_state.parent_token)
