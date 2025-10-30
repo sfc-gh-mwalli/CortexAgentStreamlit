@@ -119,7 +119,7 @@ def sidebar_threads(client, account_url: str) -> None:
         if getattr(client, "last_error", None):
             st.sidebar.warning("No threads available due to a connection error above.")
         else:
-        st.sidebar.info("No threads found. Create one below.")
+            st.sidebar.info("No threads found. Create one below.")
 
     selected = st.sidebar.selectbox(
         "Select a thread",
