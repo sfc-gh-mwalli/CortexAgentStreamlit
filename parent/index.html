@@ -32,8 +32,8 @@ const cfg = {
   accountUrl: 'https://wa31964.us-east-2.aws.snowflakecomputing.com', // no path, no trailing slash
   clientId: 'BGJxYRrwWw7bcdjEptdCyCDICbQ=',
   // Redirect back to THIS page so we can handle the code here
-  redirectUri: window.location.origin + '/parent/index.html',
-  scope: 'SESSION:ROLE:PUBLIC',
+  redirectUri: 'http://localhost:8000/parent/index.html',
+  scope: 'SESSION:ROLE:DBA',
   childOrigin: null,
 };
 
@@ -111,7 +111,20 @@ document.getElementById('refresh').onclick = async ()=>{ try{ await refreshToken
   // Initialize iframe first so messages are delivered to the right context
   const childUrl = document.getElementById('childUrl').value;
   const frame = document.getElementById('child');
-  frame.src = childUrl;
+  // If we already have a code, pass it via iframe URL so the child can read via st.query_params
+  if(savedCode){
+    try{
+      const u2 = new URL(childUrl);
+      u2.searchParams.set('p_code', savedCode);
+      if(savedVerifier) u2.searchParams.set('p_cv', savedVerifier);
+      u2.searchParams.set('p_cid', cfg.clientId);
+      u2.searchParams.set('p_ruri', cfg.redirectUri);
+      u2.searchParams.set('p_acc', cfg.accountUrl);
+      frame.src = u2.toString();
+    }catch{ frame.src = childUrl; }
+  } else {
+    frame.src = childUrl;
+  }
   try{ cfg.childOrigin = new URL(childUrl).origin; }catch{}
 
   function sendCodeToChild(){
@@ -127,9 +140,9 @@ document.getElementById('refresh').onclick = async ()=>{ try{ await refreshToken
   }
 
   if(savedCode){
-    // Try immediately and on iframe load, then clear the URL code
-    setTimeout(sendCodeToChild, 50);
+    // Also post via postMessage as a backup after load, then clear code from parent URL
     frame.addEventListener('load', () => setTimeout(sendCodeToChild, 50), { once: true });
+    setTimeout(sendCodeToChild, 100);
     history.replaceState({}, document.title, '/parent/index.html');
   }
 
