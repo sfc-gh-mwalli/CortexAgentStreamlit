@@ -25,8 +25,7 @@
   <input id="childUrl" style="width:100%" value="http://localhost:8501/"/>
   <div style="font-size:12px; color:#64748b; margin-top:4px;">Only adjust for local testing.</div>
   <div style="height:8px"></div>
-  <button id="resend" style="margin-right:8px;">Resend code/token to child</button>
-  <button id="refresh" style="display:none;">Refresh token</button>
+  <button id="resend" style="margin-right:8px;">Resend code to child</button>
   <div style="height:8px"></div>
 
 </details>
@@ -53,10 +52,7 @@ const ls = {
   del(k){ localStorage.removeItem(k); }
 };
 
-const KEYS = {
-  TOKENS: 'parent_tokens', // {access_token, refresh_token, expires_at}
-  VERIFIER: 'parent_cv'    // code_verifier
-};
+const KEYS = { VERIFIER: 'parent_cv' };
 
 function status(msg){ document.getElementById('status').textContent = msg; }
 function b64url(a){ return btoa(String.fromCharCode.apply(null,new Uint8Array(a))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
@@ -75,30 +71,7 @@ function buildAuthorizeUrl(challenge){
   return url.toString();
 }
 
-// Note: Browser CORS blocks token exchange to Snowflake directly from the parent.
-// We delegate the code->token exchange to the child (Streamlit) via postMessage.
-
-async function refreshToken(){
-  const t = ls.get(KEYS.TOKENS); if(!t?.refresh_token) throw new Error('No refresh_token');
-  const tokenUrl = cfg.accountUrl.replace(/\/$/, '') + '/oauth/token-request';
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token', refresh_token: t.refresh_token, client_id: cfg.clientId
-  });
-  const resp = await fetch(tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
-  if(!resp.ok){ throw new Error(await resp.text()); }
-  const tok = await resp.json();
-  const exp = Math.floor(Date.now()/1000) + (tok.expires_in||3600);
-  ls.set(KEYS.TOKENS, { access_token: tok.access_token, refresh_token: tok.refresh_token || t.refresh_token, expires_at: exp });
-  return tok;
-}
-
-function sendToChild(){
-  const f = document.getElementById('child');
-  const win = f && f.contentWindow; if(!win) return;
-  const t = ls.get(KEYS.TOKENS); if(!t?.access_token) { status('No token to send'); return; }
-  win.postMessage({ type:'auth:token', access_token: t.access_token, expires_at: t.expires_at }, cfg.childOrigin || '*');
-  status('Token posted to child');
-}
+// Note: parent no longer exchanges or sends tokens; child exchanges server-side using URL params.
 
 document.getElementById('login').onclick = async ()=>{
   try{
@@ -108,13 +81,14 @@ document.getElementById('login').onclick = async ()=>{
   }catch(e){ status('Login error: '+e); }
 };
 
-document.getElementById('resend').onclick = ()=> sendToChild();
-document.getElementById('refresh').onclick = async ()=>{ try{ await refreshToken(); sendToChild(); }catch(e){ status('Refresh error: '+e); } };
+document.getElementById('resend').onclick = ()=>{
+  const f = document.getElementById('child');
+  try { f.src = f.src; status('Resent code to child'); } catch(e) {}
+};
 document.getElementById('signout').onclick = ()=>{
-  ls.del(KEYS.TOKENS); ls.del(KEYS.VERIFIER);
+  ls.del(KEYS.VERIFIER);
   status('Signed out.');
   document.getElementById('miniStatus').textContent = '';
-  try{ const f=document.getElementById('child'); f.contentWindow.postMessage({type:'auth:token', access_token:null}, '*'); }catch{}
 };
 
 // Handle callback
@@ -143,41 +117,14 @@ document.getElementById('signout').onclick = ()=>{
   }
   try{ cfg.childOrigin = new URL(childUrl).origin; }catch{}
 
-  function sendCodeToChild(){
-    const win = frame && frame.contentWindow; if(!win || !savedCode) return;
-    win.postMessage({
-      type:'auth:code', code: savedCode,
-      code_verifier: savedVerifier,
-      client_id: cfg.clientId,
-      redirect_uri: cfg.redirectUri,
-      account_url: cfg.accountUrl
-    }, cfg.childOrigin || '*');
-    status('Auth code sent to child for exchange');
-  }
+  function sendCodeToChild(){ status('Auth code sent to child for exchange'); }
 
   if(savedCode){
-    // Also post via postMessage as a backup after load, then clear code from parent URL
+    // Clear code from parent URL for a clean state
     frame.addEventListener('load', () => setTimeout(sendCodeToChild, 50), { once: true });
-    setTimeout(sendCodeToChild, 100);
     history.replaceState({}, document.title, '/parent/index.html');
   }
 
-  // Respond to child auth:request — prefer sending code if we have it, else token
-  window.addEventListener('message', (e)=>{
-    if(cfg.childOrigin && e.origin !== cfg.childOrigin) return;
-    if(e.data && e.data.type === 'auth:request'){
-      if(savedCode){
-        sendCodeToChild();
-      } else {
-        sendToChild();
-      }
-    }
-  });
-  // Auto refresh loop (every 60s, refresh if <2min remaining)
-  setInterval(async ()=>{
-    const t = ls.get(KEYS.TOKENS); if(!t?.access_token) return;
-    const remaining = t.expires_at - Math.floor(Date.now()/1000);
-    if(remaining < 120){ try{ await refreshToken(); sendToChild(); }catch(e){ /* silent */ } }
-  }, 60000);
+  // No message listener or token refresh in parent; child handles refresh.
 })();
 </script>
