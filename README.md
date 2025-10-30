@@ -87,7 +87,36 @@ const cfg = {
 ```
 
 External OAuth (Entra/Okta):
-- Replace authorize and token endpoints per your IdP. The parent supports a one‑time silent reconnect (`prompt=none`); if your tenant disallows it, it falls back to interactive login.
+- Replace authorize and token endpoints per your IdP. Silent reconnect on refresh is disabled by default in this branch. If you explicitly add a `prompt=none` attempt in `parent/index.html` and your tenant allows it, it may work; otherwise use the interactive Sign in button.
+
+### Optional: enable silent reconnect (prompt=none)
+If your IdP supports silent SSO, you can opt in to one best‑effort attempt on load:
+
+1) Add a flag in the parent config
+```js
+const cfg = { /* ...existing... */, enableSilentReconnect: true };
+```
+
+2) Attempt `prompt=none` once per refresh (inside the existing IIFE)
+```js
+const u = new URL(window.location.href);
+const code = u.searchParams.get('code');
+const err  = u.searchParams.get('error');
+if (cfg.enableSilentReconnect && !code && !err) {
+  try {
+    const tried = sessionStorage.getItem('silent_tried') === '1';
+    if (!tried) {
+      sessionStorage.setItem('silent_tried','1');
+      const v = await genVerifier(); ls.set(KEYS.VERIFIER, v);
+      const cc = await challengeFrom(v);
+      window.location.assign(buildAuthorizeUrl(cc, { prompt: 'none' }));
+      return; // navigation
+    }
+  } catch {}
+}
+// after any auth response
+try { if (code || err) sessionStorage.removeItem('silent_tried'); } catch {}
+```
 
 Entra ID example:
 

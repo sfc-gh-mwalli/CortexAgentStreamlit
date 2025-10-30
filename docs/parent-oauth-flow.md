@@ -47,6 +47,9 @@ sequenceDiagram
 - Listens for child events via `postMessage`:
   - `parent:reconnect`: start a normal interactive authorize flow (same as Sign in).
 
+### Optional: enable silent reconnect (prompt=none)
+If your IdP supports silent SSO, you can opt in to a single `prompt=none` attempt on page load. Add `enableSilentReconnect: true` to `cfg` and insert a once-per-load block that builds the authorize URL with `prompt=none`. If the IdP returns an interaction-required error, the page falls back to the normal interactive Sign in.
+
 Config fields in `cfg`:
 - `accountUrl`: Snowflake account URL (no path, no trailing slash) when using Snowflake OAuth defaults
 - `clientId`: OAuth client id (from Snowflake SECURITY INTEGRATION or your IdP app)
