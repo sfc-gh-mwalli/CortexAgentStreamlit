@@ -35,15 +35,16 @@ This branch removes PAT and in-app OAuth. A tiny parent page performs OAuth and 
   - Auto‑refresh: at T−120s and on 401 once (`grant_type=refresh_token`)
   - Sidebar shows: “Authenticated via Parent OAuth”, `Scope: …`, and “Token expires in …”
 
-Secrets for the child (no parent origin config needed):
+Child secrets — Snowflake OAuth (defaults):
 
 ```toml
 # .streamlit/secrets.toml
 SNOWFLAKE_ACCOUNT_URL = "https://<account>.snowflakecomputing.com"
-# For External OAuth (optional overrides)
-# OAUTH_TOKEN_ENDPOINT = "https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token" # Entra ID
-# OAUTH_CLIENT_ID = "<client_id>"  # used for refresh if parent does not pass
-# OAUTH_SCOPE = "<scope string>"    # optional display/default
+# Optional (explicit) — the child will default to this if omitted
+OAUTH_TOKEN_ENDPOINT = "https://<account>.snowflakecomputing.com/oauth/token-request"
+# Optional
+# OAUTH_CLIENT_ID = "<OAUTH_CLIENT_ID>"
+# OAUTH_SCOPE = "SESSION:ROLE:<ROLE_NAME>"
 ```
 
 Run the parent locally:
