@@ -593,23 +593,24 @@ def main() -> None:
 
     # Require parent token
     if not account_url or not st.session_state.parent_token:
-        st.markdown(
+        components.html(
             """
-            <div style="padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;color:#334155;display:inline-block;">Waiting for token from parent…</div>
-            """,
-            unsafe_allow_html=True,
-        )
-        with st.sidebar:
-            if st.button("Connect to Snowflake", use_container_width=True):
-                components.html(
-                    """
+<div style="display:flex;justify-content:center;margin-top:12vh;">
+  <button id="connectBtn" style="
+    font-size:16px; font-weight:600; color:#ffffff; background:#0ea5e9; border:1px solid #0284c7;
+    padding:14px 22px; border-radius:10px; box-shadow:0 8px 22px rgba(2,132,199,0.25);
+    cursor:pointer; min-width:260px;">
+    Connect to Snowflake
+  </button>
+</div>
 <script>
-try { (window.top || window.parent).postMessage({ type: 'parent:reconnect' }, '*'); } catch (e) {}
+  document.getElementById('connectBtn')?.addEventListener('click', function(){
+    try { (window.top || window.parent).postMessage({ type: 'parent:reconnect' }, '*'); } catch(e){}
+  });
 </script>
 """,
-                    height=0,
-                )
-                st.stop()
+            height=140,
+        )
         return
 
     client = SnowflakeCortexAgentClient(account_url=account_url, auth_token=st.session_state.parent_token)
@@ -631,6 +632,18 @@ try { (window.top || window.parent).postMessage({ type: 'parent:reconnect' }, '*
                     st.caption(f"Token expires in {remaining}s")
         except Exception:
             pass
+        # Child-side sign out (child only)
+        if st.button("Sign out", use_container_width=True):
+            st.session_state.parent_token = None
+            st.session_state.parent_refresh_token = None
+            st.session_state.parent_token_expires = None
+            st.session_state.parent_scope = None
+            st.session_state.parent_last_refresh = None
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+            st.rerun()
         try:
             lr = st.session_state.get("parent_last_refresh")
             if isinstance(lr, (int, float)):
