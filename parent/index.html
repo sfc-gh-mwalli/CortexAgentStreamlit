@@ -14,12 +14,22 @@
 
 <div class="row">
   <button id="login">Sign in (Snowflake OAuth)</button>
-  <button id="send">Send token to child</button>
-  <button id="refresh">Refresh token</button>
+  <button id="signout" style="margin-left:8px;">Sign out</button>
+  <span id="miniStatus" style="margin-left:12px; color:#64748b;"></span>
+
 </div>
 
-<label>Child URL</label>
-<input id="childUrl" style="width:100%" value="http://localhost:8501/"/>
+<details style="margin:8px 0 6px 0;">
+  <summary>Dev options</summary>
+  <label style="margin-top:8px;">Child URL</label>
+  <input id="childUrl" style="width:100%" value="http://localhost:8501/"/>
+  <div style="font-size:12px; color:#64748b; margin-top:4px;">Only adjust for local testing.</div>
+  <div style="height:8px"></div>
+  <button id="resend" style="margin-right:8px;">Resend code/token to child</button>
+  <button id="refresh" style="display:none;">Refresh token</button>
+  <div style="height:8px"></div>
+
+</details>
 
 <label>Status</label>
 <pre id="status"></pre>
@@ -98,8 +108,14 @@ document.getElementById('login').onclick = async ()=>{
   }catch(e){ status('Login error: '+e); }
 };
 
-document.getElementById('send').onclick = ()=> sendToChild();
+document.getElementById('resend').onclick = ()=> sendToChild();
 document.getElementById('refresh').onclick = async ()=>{ try{ await refreshToken(); sendToChild(); }catch(e){ status('Refresh error: '+e); } };
+document.getElementById('signout').onclick = ()=>{
+  ls.del(KEYS.TOKENS); ls.del(KEYS.VERIFIER);
+  status('Signed out.');
+  document.getElementById('miniStatus').textContent = '';
+  try{ const f=document.getElementById('child'); f.contentWindow.postMessage({type:'auth:token', access_token:null}, '*'); }catch{}
+};
 
 // Handle callback
 (async function(){

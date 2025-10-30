@@ -545,7 +545,12 @@ def main() -> None:
 
     # Require parent token
     if not account_url or not st.session_state.parent_token:
-        st.info("Waiting for token from parent…")
+        st.markdown(
+            """
+            <div style="padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;color:#334155;display:inline-block;">Waiting for token from parent…</div>
+            """,
+            unsafe_allow_html=True,
+        )
         return
 
     client = SnowflakeCortexAgentClient(account_url=account_url, auth_token=st.session_state.parent_token)
