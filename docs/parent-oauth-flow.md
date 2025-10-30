@@ -28,7 +28,7 @@ sequenceDiagram
   C->>IdP: POST token_endpoint { grant_type=authorization_code, code, code_verifier, client_id, redirect_uri }
   IdP-->>C: { access_token, refresh_token, expires_in, scope }
   C->>C: Save { token, refresh_token, expires_at, scope, last_refresh }
-  C-->>U: Child is authenticated; shows scope, expiry, last refreshed
+  C-->>U: Child authenticated; scope and expiry shown
 
   Note over C,IdP: Auto refresh
   C->>IdP: POST token_endpoint { grant_type=refresh_token, refresh_token }
