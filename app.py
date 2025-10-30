@@ -6,7 +6,6 @@ from datetime import datetime
 import streamlit as st
 
 from snowflake_cortex_agent_client import SnowflakeCortexAgentClient
-import streamlit.components.v1 as components
 
 
 st.set_page_config(page_title="Snowflake Cortex Agent Chat", page_icon="❄️", layout="wide")
@@ -58,7 +57,7 @@ def _apply_vega_white_theme(spec: Dict[str, Any]) -> Dict[str, Any]:
 
 
 
-def sidebar_threads(client) -> None:
+def sidebar_threads(client, account_url: str) -> None:
     # App brand in sidebar
     st.sidebar.markdown(
         """
@@ -71,6 +70,22 @@ def sidebar_threads(client) -> None:
     st.sidebar.header("Threads")
     # List all threads across applications so user can discover app names
     threads = client.list_threads(limit=50)
+    # Auto-recover on 401 by refreshing once
+    if getattr(client, "last_error", None) and "401" in str(client.last_error):
+        rt = st.session_state.get("parent_refresh_token")
+        cid = st.session_state.get("oauth_client_id")
+        if rt and cid:
+            try:
+                tok = _refresh_access_token(account_url, cid, rt)
+                st.session_state.parent_token = tok.get("access_token")
+                st.session_state.parent_refresh_token = tok.get("refresh_token") or rt
+                try:
+                    st.session_state.parent_token_expires = int(time.time()) + int(tok.get("expires_in", 3600))
+                except Exception:
+                    pass
+                st.rerun()
+            except Exception:
+                pass
     # If an HTTP error occurred, surface it prominently
     if getattr(client, "last_error", None):
         st.sidebar.error(
@@ -446,42 +461,7 @@ def main() -> None:
     # Fixed origin application name for thread creation (from secrets or default)
     st.session_state["origin_application"] = _get_secret("SNOWFLAKE_ORIGIN_APPLICATION", "hcls_agent_st")
 
-    # Parent-managed token receiver (postMessage)
-    allowed_js = json.dumps(allowed_parents)
-    receiver = (
-        """
-    <script>
-    (function(){
-      const allowed = ALLOWED_PARENTS || [];
-      window.addEventListener('message', function(e){
-        try {
-          if (allowed.length && !allowed.includes(e.origin)) return;
-          const d = e.data || {};
-          if (d.type === 'auth:code' && d.code && d.code_verifier) {
-            const u = new URL(window.location.href);
-            u.searchParams.set('p_code', d.code);
-            u.searchParams.set('p_cv', d.code_verifier);
-            if (d.client_id) u.searchParams.set('p_cid', d.client_id);
-            if (d.redirect_uri) u.searchParams.set('p_ruri', d.redirect_uri);
-            if (d.account_url) u.searchParams.set('p_acc', d.account_url);
-            window.location.replace(u.toString());
-            return;
-          }
-          if (d.type === 'auth:token' && d.access_token) {
-            const u = new URL(window.location.href);
-            u.searchParams.set('parent_token', d.access_token);
-            if (d.expires_at) u.searchParams.set('pt_exp', d.expires_at);
-            window.location.replace(u.toString());
-          }
-        } catch (err) {}
-      });
-      // Ask parent once if we don't have a token yet
-      try { window.parent.postMessage({ type: 'auth:request' }, '*'); } catch (err) {}
-    })();
-    </script>
-        """
-    ).replace("ALLOWED_PARENTS", allowed_js)
-    components.html(receiver, height=0)
+    # No postMessage receiver; rely on iframe URL handoff only
 
     # Helper: token exchange via server-side request (avoids browser CORS)
     def _exchange_code_for_token(acc_url: str, client_id: str, redirect_uri: str, code: str, verifier: str) -> Dict[str, Any]:
@@ -493,6 +473,20 @@ def main() -> None:
             "redirect_uri": redirect_uri,
             "client_id": client_id,
             "code_verifier": verifier,
+        }
+        resp = requests.post(token_url, data=data, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+
+    # Helper: refresh access token using refresh_token
+    global _refresh_access_token
+    def _refresh_access_token(acc_url: str, client_id: str, refresh_token: str) -> Dict[str, Any]:
+        import requests
+        token_url = (acc_url.rstrip("/") + "/oauth/token-request")
+        data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+            "client_id": client_id,
         }
         resp = requests.post(token_url, data=data, timeout=30)
         resp.raise_for_status()
@@ -517,6 +511,7 @@ def main() -> None:
                 st.session_state.parent_token = tok.get("access_token")
                 # optional refresh storage
                 st.session_state.parent_refresh_token = tok.get("refresh_token")
+                st.session_state.oauth_client_id = pcid
                 # compute expires_at from expires_in
                 try:
                     exp = int(time.time()) + int(tok.get("expires_in", 3600))
@@ -543,6 +538,24 @@ def main() -> None:
     except Exception:
         pass
 
+    # Auto refresh at T-120s if possible
+    try:
+        exp = st.session_state.get("parent_token_expires")
+        if isinstance(exp, (int, float)) and exp - time.time() < 120:
+            rt = st.session_state.get("parent_refresh_token")
+            cid = st.session_state.get("oauth_client_id")
+            if rt and cid:
+                tok = _refresh_access_token(account_url, cid, rt)
+                st.session_state.parent_token = tok.get("access_token")
+                st.session_state.parent_refresh_token = tok.get("refresh_token") or rt
+                try:
+                    st.session_state.parent_token_expires = int(time.time()) + int(tok.get("expires_in", 3600))
+                except Exception:
+                    pass
+                st.rerun()
+    except Exception:
+        pass
+
     # Require parent token
     if not account_url or not st.session_state.parent_token:
         st.markdown(
@@ -555,7 +568,7 @@ def main() -> None:
 
     client = SnowflakeCortexAgentClient(account_url=account_url, auth_token=st.session_state.parent_token)
 
-    sidebar_threads(client)
+    sidebar_threads(client, account_url)
     with st.sidebar:
         st.caption("Authenticated via Parent OAuth")
         try:
