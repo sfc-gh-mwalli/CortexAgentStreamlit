@@ -23,7 +23,7 @@ SNOWFLAKE_ACCOUNT_URL = "https://<account>.snowflakecomputing.com"
 
 This branch removes PAT and in-app OAuth. A tiny parent page performs OAuth and hands the authorization code to the Streamlit child. The child exchanges the code server‑side and manages refresh. Defaults are tailored for Snowflake OAuth; External OAuth examples (Entra/Okta) are below.
 
-See the detailed flow and configuration guide in `docs/parent-oauth-flow.md`.
+See the detailed flow and configuration guide in [Parent-managed OAuth flow](docs/parent-oauth-flow.md).
 
 - Parent page: `parent/index.html`
   - PUBLIC + PKCE client (Snowflake OAuth for proto; Entra/Okta for External OAuth later)
