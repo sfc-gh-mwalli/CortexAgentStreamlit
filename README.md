@@ -26,14 +26,15 @@ This branch removes PAT and in-app OAuth. A tiny parent page performs OAuth and 
 - Parent page: `parent/index.html`
   - PUBLIC + PKCE client (Snowflake OAuth for proto; Entra/Okta for External OAuth later)
   - After callback, loads the iframe with query params: `p_code`, `p_cv`, `p_cid`, `p_ruri`, `p_acc`
-  - One‑time silent reconnect attempt with `prompt=none` (if the IdP permits). Falls back to normal “Sign in”.
-  - “Sign out” also signs out the child (loads iframe with `p_signout=1`).
+  - Silent reconnect on refresh is disabled by default (Snowflake PUBLIC clients often re‑prompt). Use the Sign in button to start OAuth.
+  - Parent Sign out clears the parent and signals the child via `p_signout=1`.
 
 - Child (Streamlit `app.py`):
+  - Initial state shows one centered primary button: “Connect to Snowflake” (requests the parent to initiate OAuth)
   - On first load with code: server‑side POST to `<account>/oauth/token-request` using `grant_type=authorization_code` and PKCE verifier
-  - Stores `access_token`, `refresh_token`, `expires_at`, and `scope`
+  - Stores `access_token`, `refresh_token`, `expires_at`, and `scope`; displays `Scope` and `Token expires in …`; also shows “Last refreshed …”
   - Auto‑refresh: at T−120s and on 401 once (`grant_type=refresh_token`)
-  - Sidebar shows: “Authenticated via Parent OAuth”, `Scope: …`, and “Token expires in …”
+  - Child Sign out is local‑only (clears the child session without signing out the parent)
 
 Child secrets — Snowflake OAuth (defaults):
 
