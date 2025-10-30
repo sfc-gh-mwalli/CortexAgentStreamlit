@@ -21,7 +21,7 @@ SNOWFLAKE_ACCOUNT_URL = "https://<account>.snowflakecomputing.com"
 
 ## Parent-managed OAuth (Track B: `feat/oauth-parent`)
 
-This branch removes PAT and in-app OAuth. A tiny parent page performs OAuth and hands the authorization code to the Streamlit child. The child exchanges the code server‑side and manages refresh.
+This branch removes PAT and in-app OAuth. A tiny parent page performs OAuth and hands the authorization code to the Streamlit child. The child exchanges the code server‑side and manages refresh. Defaults are tailored for Snowflake OAuth; External OAuth examples (Entra/Okta) are below.
 
 - Parent page: `parent/index.html`
   - PUBLIC + PKCE client (Snowflake OAuth for proto; Entra/Okta for External OAuth later)
@@ -71,7 +71,7 @@ create or replace security integration OAUTH_PUB_PKCE
 desc security integration OAUTH_PUB_PKCE; -- copy OAUTH_CLIENT_ID
 ```
 
-Parent config (top of `parent/index.html`):
+Parent config (top of `parent/index.html`) — Snowflake OAuth defaults:
 
 ```js
 const cfg = {
@@ -83,8 +83,49 @@ const cfg = {
 ```
 
 External OAuth (Entra/Okta):
-- Replace `accountUrl`, `clientId`, `scope`, and authorize/token endpoints per your External OAuth + Snowflake integration.
-- Silent reconnect (`prompt=none`) may or may not be allowed by your tenant; the parent will fall back to interactive login if `interaction_required` is returned.
+- Replace authorize and token endpoints per your IdP. The parent supports a one‑time silent reconnect (`prompt=none`); if your tenant disallows it, it falls back to interactive login.
+
+Entra ID example:
+
+Parent (`parent/index.html`):
+```js
+const cfg = {
+  authEndpoint: 'https://login.microsoftonline.com/<tenant>/oauth2/v2.0/authorize',
+  tokenEndpoint: 'https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token',
+  clientId: '<CLIENT_ID>',
+  redirectUri: 'http://localhost:8000/parent/index.html',
+  scope: 'api://<external-oauth-audience>/.default' // or custom scopes
+};
+```
+
+Child (`.streamlit/secrets.toml`):
+```toml
+SNOWFLAKE_ACCOUNT_URL = "https://<account>.snowflakecomputing.com"
+OAUTH_TOKEN_ENDPOINT = "https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token"
+OAUTH_CLIENT_ID = "<CLIENT_ID>"
+OAUTH_SCOPE = "api://<external-oauth-audience>/.default"
+```
+
+Okta example:
+
+Parent (`parent/index.html`):
+```js
+const cfg = {
+  authEndpoint: 'https://<yourOktaDomain>/oauth2/<authServerId>/v1/authorize',
+  tokenEndpoint: 'https://<yourOktaDomain>/oauth2/<authServerId>/v1/token',
+  clientId: '<CLIENT_ID>',
+  redirectUri: 'http://localhost:8000/parent/index.html',
+  scope: 'api://<external-oauth-audience>/.default' // or okta-specific scopes
+};
+```
+
+Child (`.streamlit/secrets.toml`):
+```toml
+SNOWFLAKE_ACCOUNT_URL = "https://<account>.snowflakecomputing.com"
+OAUTH_TOKEN_ENDPOINT = "https://<yourOktaDomain>/oauth2/<authServerId>/v1/token"
+OAUTH_CLIENT_ID = "<CLIENT_ID>"
+OAUTH_SCOPE = "api://<external-oauth-audience>/.default"
+```
 
 Threads:
 - Use the sidebar to list, load, or create threads. Conversations will use the selected thread when both `thread_id` and `parent_message_id` are provided.
