@@ -447,10 +447,12 @@ def main() -> None:
     st.session_state["origin_application"] = _get_secret("SNOWFLAKE_ORIGIN_APPLICATION", "hcls_agent_st")
 
     # Parent-managed token receiver (postMessage)
-    receiver = f"""
+    allowed_js = json.dumps(allowed_parents)
+    receiver = (
+        """
     <script>
     (function(){
-      const allowed = {allowed_parents} || [];
+      const allowed = ALLOWED_PARENTS || [];
       window.addEventListener('message', function(e){
         try {
           if (allowed.length && !allowed.includes(e.origin)) return;
@@ -467,7 +469,8 @@ def main() -> None:
       try { window.parent.postMessage({ type: 'auth:request' }, '*'); } catch (err) {}
     })();
     </script>
-    """
+        """
+    ).replace("ALLOWED_PARENTS", allowed_js)
     components.html(receiver, height=0)
 
     # Consume parent token from query params
