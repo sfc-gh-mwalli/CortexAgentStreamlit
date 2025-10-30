@@ -131,7 +131,8 @@ document.getElementById('signout').onclick = ()=>{
   // Listen for child reconnect requests
   window.addEventListener('message', async (e)=>{
     try{
-      if (e.source !== frame.contentWindow) return;
+      // Accept messages from the child origin (including nested iframes like Streamlit components)
+      if (cfg.childOrigin && e.origin !== cfg.childOrigin) return;
       if (e.data && e.data.type === 'parent:reconnect'){
         const v = await genVerifier(); ls.set(KEYS.VERIFIER, v);
         const cc = await challengeFrom(v);

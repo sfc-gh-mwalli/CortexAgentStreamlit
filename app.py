@@ -601,7 +601,14 @@ def main() -> None:
         )
         with st.sidebar:
             if st.button("Connect to Snowflake", use_container_width=True):
-                components.html("<script>try{(window.top||window.parent).postMessage({type:'parent:reconnect'}, '*');}catch(e){}<\/script>", height=0)
+                components.html(
+                    """
+<script>
+try { (window.top || window.parent).postMessage({ type: 'parent:reconnect' }, '*'); } catch (e) {}
+</script>
+""",
+                    height=0,
+                )
                 st.stop()
         return
 
