@@ -29,14 +29,11 @@ sequenceDiagram
   IdP-->>C: { access_token, refresh_token, expires_in, scope }
   C->>C: Save { token, refresh_token, expires_at, scope, last_refresh }
   C-->>U: Child authenticated; scope and expiry shown
-
-  Note over C,IdP: Auto refresh
   C->>IdP: POST token_endpoint { grant_type=refresh_token, refresh_token }
   IdP-->>C: { access_token, refresh_token?, expires_in, scope? }
   C->>C: Update session; rerun
 
-  Note over C,P: Child-only sign out
-  U->>C: Click child "Sign out"
+  U->>C: Click child Sign out
   C->>C: Clear token state and rerun (no parent sign-out)
 ```
 
