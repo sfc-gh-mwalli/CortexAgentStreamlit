@@ -74,9 +74,11 @@ def sidebar_threads(client, account_url: str) -> None:
     if getattr(client, "last_error", None) and "401" in str(client.last_error):
         rt = st.session_state.get("parent_refresh_token")
         cid = st.session_state.get("oauth_client_id")
+        token_ep_from_secrets = _get_secret("OAUTH_TOKEN_ENDPOINT", "")
         if rt and cid:
             try:
-                tok = _refresh_access_token(account_url, cid, rt)
+                token_ep = token_ep_from_secrets or (account_url.rstrip("/") + "/oauth/token-request")
+                tok = _refresh_access_token(token_ep, cid, rt)
                 st.session_state.parent_token = tok.get("access_token")
                 st.session_state.parent_refresh_token = tok.get("refresh_token") or rt
                 try:
@@ -449,6 +451,10 @@ def main() -> None:
 
     # Read connection
     account_url = _get_secret("SNOWFLAKE_ACCOUNT_URL", "")
+    # OAuth overrides for External OAuth (Entra/Okta)
+    oauth_token_endpoint = _get_secret("OAUTH_TOKEN_ENDPOINT", "")  # e.g., https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token
+    oauth_client_id_secret = _get_secret("OAUTH_CLIENT_ID", "")
+    oauth_scope_secret = _get_secret("OAUTH_SCOPE", "")
     # Allowed parent origins (comma-separated or JSON array)
     allowed_parents_raw = _get_secret("ALLOWED_PARENT_ORIGINS", "")
     allowed_parents: List[str] = []
@@ -467,9 +473,9 @@ def main() -> None:
     # No postMessage receiver; rely on iframe URL handoff only
 
     # Helper: token exchange via server-side request (avoids browser CORS)
-    def _exchange_code_for_token(acc_url: str, client_id: str, redirect_uri: str, code: str, verifier: str) -> Dict[str, Any]:
+    def _exchange_code_for_token(token_endpoint: str, client_id: str, redirect_uri: str, code: str, verifier: str) -> Dict[str, Any]:
         import requests
-        token_url = (acc_url.rstrip("/") + "/oauth/token-request")
+        token_url = token_endpoint
         data = {
             "grant_type": "authorization_code",
             "code": code,
@@ -483,9 +489,9 @@ def main() -> None:
 
     # Helper: refresh access token using refresh_token
     global _refresh_access_token
-    def _refresh_access_token(acc_url: str, client_id: str, refresh_token: str) -> Dict[str, Any]:
+    def _refresh_access_token(token_endpoint: str, client_id: str, refresh_token: str) -> Dict[str, Any]:
         import requests
-        token_url = (acc_url.rstrip("/") + "/oauth/token-request")
+        token_url = token_endpoint
         data = {
             "grant_type": "refresh_token",
             "refresh_token": refresh_token,
@@ -519,15 +525,20 @@ def main() -> None:
         if isinstance(pcid, list): pcid = pcid[0]
         if isinstance(pruri, list): pruri = pruri[0]
         if isinstance(pacc, list): pacc = pacc[0]
-        if pc and pv and pcid and pruri and (pacc or account_url):
+        if pc and pv and pruri and (pcid or oauth_client_id_secret) and (pacc or account_url):
             try:
-                tok = _exchange_code_for_token(pacc or account_url, pcid, pruri, pc, pv)
+                # Determine token endpoint and client id for the exchange
+                token_ep = oauth_token_endpoint or ((pacc or account_url).rstrip("/") + "/oauth/token-request")
+                client_id_for_exchange = pcid or oauth_client_id_secret
+                tok = _exchange_code_for_token(token_ep, client_id_for_exchange, pruri, pc, pv)
                 st.session_state.parent_token = tok.get("access_token")
                 # optional refresh storage
                 st.session_state.parent_refresh_token = tok.get("refresh_token")
-                st.session_state.oauth_client_id = pcid
+                st.session_state.oauth_client_id = client_id_for_exchange
                 if isinstance(tok.get("scope"), str):
                     st.session_state.parent_scope = tok.get("scope")
+                elif oauth_scope_secret:
+                    st.session_state.parent_scope = oauth_scope_secret
                 # compute expires_at from expires_in
                 try:
                     exp = int(time.time()) + int(tok.get("expires_in", 3600))
@@ -562,7 +573,8 @@ def main() -> None:
             rt = st.session_state.get("parent_refresh_token")
             cid = st.session_state.get("oauth_client_id")
             if rt and cid:
-                tok = _refresh_access_token(account_url, cid, rt)
+                token_ep = oauth_token_endpoint or (account_url.rstrip("/") + "/oauth/token-request")
+                tok = _refresh_access_token(token_ep, cid, rt)
                 st.session_state.parent_token = tok.get("access_token")
                 st.session_state.parent_refresh_token = tok.get("refresh_token") or rt
                 try:
@@ -571,6 +583,8 @@ def main() -> None:
                     pass
                 if isinstance(tok.get("scope"), str):
                     st.session_state.parent_scope = tok.get("scope")
+                elif oauth_scope_secret:
+                    st.session_state.parent_scope = oauth_scope_secret
                 st.session_state.parent_last_refresh = int(time.time())
                 st.rerun()
     except Exception:

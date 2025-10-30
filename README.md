@@ -40,6 +40,10 @@ Secrets for the child (no parent origin config needed):
 ```toml
 # .streamlit/secrets.toml
 SNOWFLAKE_ACCOUNT_URL = "https://<account>.snowflakecomputing.com"
+# For External OAuth (optional overrides)
+# OAUTH_TOKEN_ENDPOINT = "https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token" # Entra ID
+# OAUTH_CLIENT_ID = "<client_id>"  # used for refresh if parent does not pass
+# OAUTH_SCOPE = "<scope string>"    # optional display/default
 ```
 
 Run the parent locally:
