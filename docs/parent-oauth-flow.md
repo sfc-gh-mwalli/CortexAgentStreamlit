@@ -24,13 +24,13 @@ sequenceDiagram
   P->>P: Save verifier in localStorage
   P->>IdP: GET /authorize (with PKCE)
   IdP-->>P: Redirect back with code and state
-  P->>C: Load iframe URL with p_code, p_cv (verifier), p_cid, p_ruri, p_acc
-  C->>IdP: POST token_endpoint { grant_type=authorization_code, code, code_verifier, client_id, redirect_uri }
-  IdP-->>C: { access_token, refresh_token, expires_in, scope }
-  C->>C: Save { token, refresh_token, expires_at, scope, last_refresh }
-  C-->>U: Child authenticated; scope and expiry shown
-  C->>IdP: POST token_endpoint { grant_type=refresh_token, refresh_token }
-  IdP-->>C: { access_token, refresh_token?, expires_in, scope? }
+  P->>C: Load iframe with code and verifier parameters
+  C->>IdP: POST token endpoint for authorization code
+  IdP-->>C: Return access token and refresh token
+  C->>C: Save tokens and expiry in session
+  C-->>U: Child authenticated and status shown
+  C->>IdP: POST token endpoint for refresh token
+  IdP-->>C: Return new access token and optional refresh token
   C->>C: Update session; rerun
 
   U->>C: Click child Sign out
