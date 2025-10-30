@@ -92,6 +92,7 @@ document.getElementById('signout').onclick = ()=>{
     u.searchParams.set('p_signout','1');
     document.getElementById('child').src = u.toString();
   }catch(e){}
+  try{ sessionStorage.removeItem('silent_tried'); }catch(e){}
   status('Signed out in parent and child.');
   document.getElementById('miniStatus').textContent = '';
 };
@@ -103,6 +104,9 @@ document.getElementById('signout').onclick = ()=>{
   const err = u.searchParams.get('error');
   const savedCode = code || null;
   const savedVerifier = ls.get(KEYS.VERIFIER);
+
+  // Reset silent reconnect flag after any auth response
+  try { if (savedCode || err) sessionStorage.removeItem('silent_tried'); } catch(e) {}
 
   // If no code and we haven't tried silent auth yet, attempt prompt=none
   if(!savedCode && !err){
