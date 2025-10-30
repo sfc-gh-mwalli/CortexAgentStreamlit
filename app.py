@@ -83,6 +83,9 @@ def sidebar_threads(client, account_url: str) -> None:
                     st.session_state.parent_token_expires = int(time.time()) + int(tok.get("expires_in", 3600))
                 except Exception:
                     pass
+                if isinstance(tok.get("scope"), str):
+                    st.session_state.parent_scope = tok.get("scope")
+                st.session_state.parent_last_refresh = int(time.time())
                 st.rerun()
             except Exception:
                 pass
@@ -531,6 +534,7 @@ def main() -> None:
                 except Exception:
                     exp = None
                 st.session_state.parent_token_expires = exp
+                st.session_state.parent_last_refresh = int(time.time())
                 st.query_params.clear()
                 st.rerun()
             except Exception as exc:
@@ -567,6 +571,7 @@ def main() -> None:
                     pass
                 if isinstance(tok.get("scope"), str):
                     st.session_state.parent_scope = tok.get("scope")
+                st.session_state.parent_last_refresh = int(time.time())
                 st.rerun()
     except Exception:
         pass
@@ -598,6 +603,17 @@ def main() -> None:
                     st.caption(f"Token expires in {mins} min")
                 else:
                     st.caption(f"Token expires in {remaining}s")
+        except Exception:
+            pass
+        try:
+            lr = st.session_state.get("parent_last_refresh")
+            if isinstance(lr, (int, float)):
+                ago = max(0, int(time.time() - lr))
+                mins = ago // 60
+                if mins > 0:
+                    st.caption(f"Last refreshed {mins} min ago")
+                else:
+                    st.caption(f"Last refreshed {ago}s ago")
         except Exception:
             pass
 
