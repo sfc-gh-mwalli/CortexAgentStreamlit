@@ -1,0 +1,145 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Parent OAuth (PKCE) → Streamlit Child</title>
+<style>
+  body { font-family: system-ui, Segoe UI, Arial; margin: 24px; }
+  label { display:block; margin: 8px 0 4px; }
+  input, button { padding: 8px; }
+  iframe { width: 100%; height: 70vh; border: 1px solid #e5e7eb; }
+  pre { background:#f8fafc; padding:8px; border:1px solid #e5e7eb; }
+  .row { display:flex; gap:12px; align-items:center; }
+</style>
+
+<h2>Parent OAuth (PKCE) → Streamlit Child</h2>
+
+<div class="row">
+  <button id="login">Sign in (Snowflake OAuth)</button>
+  <button id="send">Send token to child</button>
+  <button id="refresh">Refresh token</button>
+</div>
+
+<label>Child URL</label>
+<input id="childUrl" style="width:100%" value="http://localhost:8501/"/>
+
+<label>Status</label>
+<pre id="status"></pre>
+
+<iframe id="child" src="" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
+
+<script>
+const cfg = {
+  accountUrl: 'https://<ACCOUNT>.snowflakecomputing.com', // set for Snowflake OAuth prototype
+  clientId: '<OAUTH_CLIENT_ID>',
+  redirectUri: window.location.origin + '/oauth-callback',
+  scope: 'SESSION:ROLE:PUBLIC',
+  childOrigin: null,
+};
+
+const ls = {
+  set(k,v){ localStorage.setItem(k, JSON.stringify(v)); },
+  get(k){ try{ return JSON.parse(localStorage.getItem(k)); } catch{ return null; } },
+  del(k){ localStorage.removeItem(k); }
+};
+
+const KEYS = {
+  TOKENS: 'parent_tokens', // {access_token, refresh_token, expires_at}
+  VERIFIER: 'parent_cv'    // code_verifier
+};
+
+function status(msg){ document.getElementById('status').textContent = msg; }
+function b64url(a){ return btoa(String.fromCharCode.apply(null,new Uint8Array(a))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+async function genVerifier(){ const arr = new Uint8Array(64); crypto.getRandomValues(arr); return Array.from(arr).map(x=>('0'+x.toString(16)).slice(-2)).join(''); }
+async function challengeFrom(v){ const enc=new TextEncoder().encode(v); const dig=await crypto.subtle.digest('SHA-256',enc); return b64url(dig); }
+
+function buildAuthorizeUrl(challenge){
+  const url = new URL(cfg.accountUrl.replace(/\/$/, '') + '/oauth/authorize');
+  url.searchParams.set('response_type','code');
+  url.searchParams.set('client_id', cfg.clientId);
+  url.searchParams.set('redirect_uri', cfg.redirectUri);
+  url.searchParams.set('scope', cfg.scope);
+  url.searchParams.set('code_challenge', challenge);
+  url.searchParams.set('code_challenge_method','S256');
+  url.searchParams.set('state', crypto.randomUUID());
+  return url.toString();
+}
+
+async function exchangeCode(code, verifier){
+  const tokenUrl = cfg.accountUrl.replace(/\/$/, '') + '/oauth/token-request';
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code, redirect_uri: cfg.redirectUri, client_id: cfg.clientId, code_verifier: verifier
+  });
+  const resp = await fetch(tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+  if(!resp.ok){ throw new Error(await resp.text()); }
+  const tok = await resp.json();
+  const exp = Math.floor(Date.now()/1000) + (tok.expires_in||3600);
+  ls.set(KEYS.TOKENS, { access_token: tok.access_token, refresh_token: tok.refresh_token, expires_at: exp });
+  return tok;
+}
+
+async function refreshToken(){
+  const t = ls.get(KEYS.TOKENS); if(!t?.refresh_token) throw new Error('No refresh_token');
+  const tokenUrl = cfg.accountUrl.replace(/\/$/, '') + '/oauth/token-request';
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token', refresh_token: t.refresh_token, client_id: cfg.clientId
+  });
+  const resp = await fetch(tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+  if(!resp.ok){ throw new Error(await resp.text()); }
+  const tok = await resp.json();
+  const exp = Math.floor(Date.now()/1000) + (tok.expires_in||3600);
+  ls.set(KEYS.TOKENS, { access_token: tok.access_token, refresh_token: tok.refresh_token || t.refresh_token, expires_at: exp });
+  return tok;
+}
+
+function sendToChild(){
+  const f = document.getElementById('child');
+  const win = f && f.contentWindow; if(!win) return;
+  const t = ls.get(KEYS.TOKENS); if(!t?.access_token) { status('No token to send'); return; }
+  win.postMessage({ type:'auth:token', access_token: t.access_token, expires_at: t.expires_at }, cfg.childOrigin || '*');
+  status('Token posted to child');
+}
+
+document.getElementById('login').onclick = async ()=>{
+  try{
+    const v = await genVerifier(); ls.set(KEYS.VERIFIER, v);
+    const cc = await challengeFrom(v);
+    window.location.assign(buildAuthorizeUrl(cc));
+  }catch(e){ status('Login error: '+e); }
+};
+
+document.getElementById('send').onclick = ()=> sendToChild();
+document.getElementById('refresh').onclick = async ()=>{ try{ await refreshToken(); sendToChild(); }catch(e){ status('Refresh error: '+e); } };
+
+// Handle callback
+(async function(){
+  const u = new URL(window.location.href);
+  if(u.pathname.endsWith('/oauth-callback')){
+    const code = u.searchParams.get('code');
+    if(code){
+      try{
+        const v = ls.get(KEYS.VERIFIER);
+        await exchangeCode(code, v);
+        history.replaceState({}, document.title, '/');
+        status('Logged in. Token stored.');
+      }catch(e){ status('Token error: '+e); }
+    }
+  }
+  // Initialize iframe
+  const childUrl = document.getElementById('childUrl').value;
+  document.getElementById('child').src = childUrl;
+  try{ cfg.childOrigin = new URL(childUrl).origin; }catch{}
+  // Proactively send token if present
+  sendToChild();
+  // Respond to child auth:request
+  window.addEventListener('message', (e)=>{
+    if(cfg.childOrigin && e.origin !== cfg.childOrigin) return;
+    if(e.data && e.data.type === 'auth:request') sendToChild();
+  });
+  // Auto refresh loop (every 60s, refresh if <2min remaining)
+  setInterval(async ()=>{
+    const t = ls.get(KEYS.TOKENS); if(!t?.access_token) return;
+    const remaining = t.expires_at - Math.floor(Date.now()/1000);
+    if(remaining < 120){ try{ await refreshToken(); sendToChild(); }catch(e){ /* silent */ } }
+  }, 60000);
+})();
+</script>

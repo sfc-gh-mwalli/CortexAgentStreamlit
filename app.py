@@ -6,6 +6,7 @@ from datetime import datetime
 import streamlit as st
 
 from snowflake_cortex_agent_client import SnowflakeCortexAgentClient
+import streamlit.components.v1 as components
 
 
 st.set_page_config(page_title="Snowflake Cortex Agent Chat", page_icon="❄️", layout="wide")
@@ -20,6 +21,10 @@ def ensure_session_state() -> None:
         st.session_state.messages: List[Dict[str, Any]] = []
     if "loaded_thread_id" not in st.session_state:
         st.session_state.loaded_thread_id = None
+    if "parent_token" not in st.session_state:
+        st.session_state.parent_token = None
+    if "parent_token_expires" not in st.session_state:
+        st.session_state.parent_token_expires = None
     # Always show detailed events now
 def _apply_vega_white_theme(spec: Dict[str, Any]) -> Dict[str, Any]:
     """Ensure charts render with a white background and dark text for readability.
@@ -424,22 +429,85 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    # Read connection strictly from secrets
+    # Read connection
     account_url = _get_secret("SNOWFLAKE_ACCOUNT_URL", "")
-    auth_token = _get_secret("SNOWFLAKE_AUTH_TOKEN", "")
+    # Allowed parent origins (comma-separated or JSON array)
+    allowed_parents_raw = _get_secret("ALLOWED_PARENT_ORIGINS", "")
+    allowed_parents: List[str] = []
+    if allowed_parents_raw:
+        try:
+            import json as _json
+            allowed_parents = _json.loads(allowed_parents_raw) if allowed_parents_raw.strip().startswith('[') else [p.strip() for p in allowed_parents_raw.split(',')]
+        except Exception:
+            allowed_parents = [p.strip() for p in allowed_parents_raw.split(',')]
     db = _get_secret("SNOWFLAKE_AGENT_DATABASE", "SNOWFLAKE_INTELLIGENCE")
     schema = _get_secret("SNOWFLAKE_AGENT_SCHEMA", "AGENTS")
     agent = _get_secret("SNOWFLAKE_AGENT_NAME", "HCLS_AGENT")
     # Fixed origin application name for thread creation (from secrets or default)
     st.session_state["origin_application"] = _get_secret("SNOWFLAKE_ORIGIN_APPLICATION", "hcls_agent_st")
 
-    # Build client
-    if not account_url or not auth_token:
-        st.error("Missing connection secrets. Set SNOWFLAKE_ACCOUNT_URL and SNOWFLAKE_AUTH_TOKEN in st.secrets.")
+    # Parent-managed token receiver (postMessage)
+    receiver = f"""
+    <script>
+    (function(){
+      const allowed = {allowed_parents} || [];
+      window.addEventListener('message', function(e){
+        try {
+          if (allowed.length && !allowed.includes(e.origin)) return;
+          const d = e.data || {};
+          if (d.type === 'auth:token' && d.access_token) {
+            const u = new URL(window.location.href);
+            u.searchParams.set('parent_token', d.access_token);
+            if (d.expires_at) u.searchParams.set('pt_exp', d.expires_at);
+            window.location.replace(u.toString());
+          }
+        } catch (err) {}
+      });
+      // Ask parent once if we don't have a token yet
+      try { window.parent.postMessage({ type: 'auth:request' }, '*'); } catch (err) {}
+    })();
+    </script>
+    """
+    components.html(receiver, height=0)
+
+    # Consume parent token from query params
+    try:
+        pt = st.query_params.get("parent_token")
+        pe = st.query_params.get("pt_exp")
+        pt = pt[0] if isinstance(pt, list) else pt
+        pe = pe[0] if isinstance(pe, list) else pe
+        if pt:
+            st.session_state.parent_token = pt
+            try:
+                st.session_state.parent_token_expires = int(pe) if pe else None
+            except Exception:
+                st.session_state.parent_token_expires = None
+            st.query_params.clear()
+            st.rerun()
+    except Exception:
+        pass
+
+    # Require parent token
+    if not account_url or not st.session_state.parent_token:
+        st.info("Waiting for token from parent…")
         return
-    client = SnowflakeCortexAgentClient(account_url=account_url, auth_token=auth_token)
+
+    client = SnowflakeCortexAgentClient(account_url=account_url, auth_token=st.session_state.parent_token)
 
     sidebar_threads(client)
+    with st.sidebar:
+        st.caption("Authenticated via Parent OAuth")
+        try:
+            exp = st.session_state.get("parent_token_expires")
+            if isinstance(exp, (int, float)):
+                remaining = max(0, int(exp - time.time()))
+                mins = remaining // 60
+                if mins > 0:
+                    st.caption(f"Token expires in {mins} min")
+                else:
+                    st.caption(f"Token expires in {remaining}s")
+        except Exception:
+            pass
 
     # Welcome message (first load or after new thread creation when no messages yet)
     if not st.session_state.messages:
