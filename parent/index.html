@@ -105,34 +105,44 @@ document.getElementById('refresh').onclick = async ()=>{ try{ await refreshToken
 (async function(){
   const u = new URL(window.location.href);
   const code = u.searchParams.get('code');
-  if(code){
-    try{
-      const v = ls.get(KEYS.VERIFIER);
-      const f = document.getElementById('child');
-      const win = f && f.contentWindow;
-      if(win){
-        win.postMessage({
-          type:'auth:code', code,
-          code_verifier: v,
-          client_id: cfg.clientId,
-          redirect_uri: cfg.redirectUri,
-          account_url: cfg.accountUrl
-        }, cfg.childOrigin || '*');
-        status('Auth code sent to child for exchange');
-      }
-      history.replaceState({}, document.title, '/parent/index.html');
-    }catch(e){ status('Token error: '+e); }
-  }
-  // Initialize iframe
+  const savedCode = code || null;
+  const savedVerifier = ls.get(KEYS.VERIFIER);
+
+  // Initialize iframe first so messages are delivered to the right context
   const childUrl = document.getElementById('childUrl').value;
-  document.getElementById('child').src = childUrl;
+  const frame = document.getElementById('child');
+  frame.src = childUrl;
   try{ cfg.childOrigin = new URL(childUrl).origin; }catch{}
-  // Proactively send token if present
-  sendToChild();
-  // Respond to child auth:request
+
+  function sendCodeToChild(){
+    const win = frame && frame.contentWindow; if(!win || !savedCode) return;
+    win.postMessage({
+      type:'auth:code', code: savedCode,
+      code_verifier: savedVerifier,
+      client_id: cfg.clientId,
+      redirect_uri: cfg.redirectUri,
+      account_url: cfg.accountUrl
+    }, cfg.childOrigin || '*');
+    status('Auth code sent to child for exchange');
+  }
+
+  if(savedCode){
+    // Try immediately and on iframe load, then clear the URL code
+    setTimeout(sendCodeToChild, 50);
+    frame.addEventListener('load', () => setTimeout(sendCodeToChild, 50), { once: true });
+    history.replaceState({}, document.title, '/parent/index.html');
+  }
+
+  // Respond to child auth:request — prefer sending code if we have it, else token
   window.addEventListener('message', (e)=>{
     if(cfg.childOrigin && e.origin !== cfg.childOrigin) return;
-    if(e.data && e.data.type === 'auth:request') sendToChild();
+    if(e.data && e.data.type === 'auth:request'){
+      if(savedCode){
+        sendCodeToChild();
+      } else {
+        sendToChild();
+      }
+    }
   });
   // Auto refresh loop (every 60s, refresh if <2min remaining)
   setInterval(async ()=>{
