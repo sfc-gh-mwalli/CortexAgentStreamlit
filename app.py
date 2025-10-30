@@ -204,30 +204,30 @@ def sidebar_threads(client, account_url: str) -> None:
     # Actions in the left navigation (sidebar)
     new_clicked = st.sidebar.button("＋ New thread", use_container_width=True)
     if new_clicked:
-            # Use origin app name from session (set in Connection section)
-            current_origin = st.session_state.get("origin_application", "demo")
-            new_id = client.create_thread(current_origin)
-            if new_id:
-                st.sidebar.info(f"Created thread {new_id}")
-                st.session_state.thread_id = str(new_id)
-                st.session_state.parent_message_id = "0"
-                st.session_state.messages = []
-                st.session_state.loaded_thread_id = str(new_id)
-            else:
-                st.error("Failed to create thread")
+        # Use origin app name from session (set in Connection section)
+        current_origin = st.session_state.get("origin_application", "demo")
+        new_id = client.create_thread(current_origin)
+        if new_id:
+            st.sidebar.info(f"Created thread {new_id}")
+            st.session_state.thread_id = str(new_id)
+            st.session_state.parent_message_id = "0"
+            st.session_state.messages = []
+            st.session_state.loaded_thread_id = str(new_id)
+        else:
+            st.error("Failed to create thread")
     del_clicked = st.sidebar.button("🗑 Delete current thread", disabled=not st.session_state.thread_id, use_container_width=True)
     if del_clicked and st.session_state.thread_id:
-            ok = client.delete_thread(st.session_state.thread_id)
-            if ok:
+        ok = client.delete_thread(st.session_state.thread_id)
+        if ok:
             st.sidebar.info("Thread deleted")
-                st.session_state.thread_id = None
-                st.session_state.parent_message_id = None
-                st.session_state.messages = []
-                st.session_state.loaded_thread_id = None
-                # Refresh sidebar threads list
-                st.rerun()
-            else:
-                st.error("Failed to delete thread")
+            st.session_state.thread_id = None
+            st.session_state.parent_message_id = None
+            st.session_state.messages = []
+            st.session_state.loaded_thread_id = None
+            # Refresh sidebar threads list
+            st.rerun()
+        else:
+            st.error("Failed to delete thread")
 
     # View options removed; detailed events always displayed
 
