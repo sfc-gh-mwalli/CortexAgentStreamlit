@@ -19,10 +19,11 @@ sequenceDiagram
   participant IdP as IdP (Snowflake/Entra/Okta)
   participant C as Child (Streamlit)
 
-  U->>P: Click parent "Sign in" or child "Connect to Snowflake"
-  P->>P: Generate PKCE verifier + challenge; save verifier in localStorage
-  P->>IdP: GET /authorize?response_type=code&code_challenge=...&client_id=...&redirect_uri=...
-  IdP-->>P: Redirect back with ?code=...&state=...
+  U->>P: Click parent Sign in or child Connect to Snowflake
+  P->>P: Generate PKCE verifier and challenge
+  P->>P: Save verifier in localStorage
+  P->>IdP: GET /authorize (with PKCE)
+  IdP-->>P: Redirect back with code and state
   P->>C: Load iframe URL with p_code, p_cv (verifier), p_cid, p_ruri, p_acc
   C->>IdP: POST token_endpoint { grant_type=authorization_code, code, code_verifier, client_id, redirect_uri }
   IdP-->>C: { access_token, refresh_token, expires_in, scope }
