@@ -25,8 +25,9 @@
   <input id="childUrl" style="width:100%" value="http://localhost:8501/"/>
   <div style="font-size:12px; color:#64748b; margin-top:4px;">Only adjust for local testing.</div>
   <div style="height:8px"></div>
-  <button id="resend" style="margin-right:8px;">Resend code to child</button>
+  <button id="clearChild" style="margin-right:8px;">Clear child session (sign out)</button>
   <div style="height:8px"></div>
+  <div id="devInfo" style="font-size:12px; color:#64748b; line-height:1.6;"></div>
 
 </details>
 
@@ -52,7 +53,7 @@ const ls = {
   del(k){ localStorage.removeItem(k); }
 };
 
-const KEYS = { VERIFIER: 'parent_cv' };
+const KEYS = { VERIFIER: 'parent_cv', LAST_LOGIN: 'parent_last_login_ts' };
 
 function status(msg){ document.getElementById('status').textContent = msg; }
 function b64url(a){ return btoa(String.fromCharCode.apply(null,new Uint8Array(a))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
@@ -81,13 +82,19 @@ document.getElementById('login').onclick = async ()=>{
   }catch(e){ status('Login error: '+e); }
 };
 
-document.getElementById('resend').onclick = ()=>{
-  const f = document.getElementById('child');
-  try { f.src = f.src; status('Resent code to child'); } catch(e) {}
+document.getElementById('clearChild').onclick = ()=>{
+  try{
+    const base = document.getElementById('childUrl').value;
+    const u = new URL(base);
+    u.searchParams.set('p_signout','1');
+    document.getElementById('child').src = u.toString();
+    status('Requested child to clear session');
+  }catch(e){}
 };
 document.getElementById('signout').onclick = ()=>{
   ls.del(KEYS.VERIFIER);
-  status('Signed out.');
+  ls.del(KEYS.LAST_LOGIN);
+  status('Signed out in parent. To fully sign out, use "Clear child session".');
   document.getElementById('miniStatus').textContent = '';
 };
 
@@ -111,6 +118,7 @@ document.getElementById('signout').onclick = ()=>{
       u2.searchParams.set('p_ruri', cfg.redirectUri);
       u2.searchParams.set('p_acc', cfg.accountUrl);
       frame.src = u2.toString();
+      ls.set(KEYS.LAST_LOGIN, Date.now());
     }catch{ frame.src = childUrl; }
   } else {
     frame.src = childUrl;
@@ -126,5 +134,20 @@ document.getElementById('signout').onclick = ()=>{
   }
 
   // No message listener or token refresh in parent; child handles refresh.
+  // Populate Dev info panel
+  try{
+    const info = [];
+    info.push('Child origin: ' + (cfg.childOrigin || 'n/a'));
+    const ts = ls.get(KEYS.LAST_LOGIN);
+    if(ts){
+      const mins = Math.floor((Date.now()-ts)/60000);
+      info.push('Last login: ' + new Date(ts).toLocaleString() + ` (${mins}m ago)`);
+    } else {
+      info.push('Last login: n/a');
+    }
+    const v = ls.get(KEYS.VERIFIER);
+    info.push('Verifier present: ' + (v ? 'yes' : 'no'));
+    document.getElementById('devInfo').textContent = info.join(' \n ');
+  }catch(e){}
 })();
 </script>

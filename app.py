@@ -495,6 +495,17 @@ def main() -> None:
     # Consume parent token from query params
     try:
         # If parent sent code+verifier, exchange here server-side
+        # Handle sign-out request from parent
+        ps = st.query_params.get("p_signout")
+        if isinstance(ps, list):
+            ps = ps[0]
+        if ps:
+            st.session_state.parent_token = None
+            st.session_state.parent_refresh_token = None
+            st.session_state.parent_token_expires = None
+            st.query_params.clear()
+            st.rerun()
+
         pc = st.query_params.get("p_code")
         pv = st.query_params.get("p_cv")
         pcid = st.query_params.get("p_cid")
