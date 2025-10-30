@@ -523,6 +523,8 @@ def main() -> None:
                 # optional refresh storage
                 st.session_state.parent_refresh_token = tok.get("refresh_token")
                 st.session_state.oauth_client_id = pcid
+                if isinstance(tok.get("scope"), str):
+                    st.session_state.parent_scope = tok.get("scope")
                 # compute expires_at from expires_in
                 try:
                     exp = int(time.time()) + int(tok.get("expires_in", 3600))
@@ -563,6 +565,8 @@ def main() -> None:
                     st.session_state.parent_token_expires = int(time.time()) + int(tok.get("expires_in", 3600))
                 except Exception:
                     pass
+                if isinstance(tok.get("scope"), str):
+                    st.session_state.parent_scope = tok.get("scope")
                 st.rerun()
     except Exception:
         pass
@@ -582,6 +586,9 @@ def main() -> None:
     sidebar_threads(client, account_url)
     with st.sidebar:
         st.caption("Authenticated via Parent OAuth")
+        scope = st.session_state.get("parent_scope")
+        if isinstance(scope, str) and scope:
+            st.caption(f"Scope: {scope}")
         try:
             exp = st.session_state.get("parent_token_expires")
             if isinstance(exp, (int, float)):

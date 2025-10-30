@@ -25,14 +25,12 @@
   <input id="childUrl" style="width:100%" value="http://localhost:8501/"/>
   <div style="font-size:12px; color:#64748b; margin-top:4px;">Only adjust for local testing.</div>
   <div style="height:8px"></div>
-  <button id="clearChild" style="margin-right:8px;">Clear child session (sign out)</button>
   <div style="height:8px"></div>
   <div id="devInfo" style="font-size:12px; color:#64748b; line-height:1.6;"></div>
 
 </details>
 
-<label>Status</label>
-<pre id="status"></pre>
+
 
 <iframe id="child" src="" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>
 
@@ -60,7 +58,7 @@ function b64url(a){ return btoa(String.fromCharCode.apply(null,new Uint8Array(a)
 async function genVerifier(){ const arr = new Uint8Array(64); crypto.getRandomValues(arr); return Array.from(arr).map(x=>('0'+x.toString(16)).slice(-2)).join(''); }
 async function challengeFrom(v){ const enc=new TextEncoder().encode(v); const dig=await crypto.subtle.digest('SHA-256',enc); return b64url(dig); }
 
-function buildAuthorizeUrl(challenge){
+function buildAuthorizeUrl(challenge, extra){
   const url = new URL(cfg.accountUrl.replace(/\/$/, '') + '/oauth/authorize');
   url.searchParams.set('response_type','code');
   url.searchParams.set('client_id', cfg.clientId);
@@ -69,6 +67,9 @@ function buildAuthorizeUrl(challenge){
   url.searchParams.set('code_challenge', challenge);
   url.searchParams.set('code_challenge_method','S256');
   url.searchParams.set('state', crypto.randomUUID());
+  if (extra && typeof extra === 'object') {
+    Object.entries(extra).forEach(([k,v]) => { if (v != null) url.searchParams.set(k, String(v)); });
+  }
   return url.toString();
 }
 
@@ -82,19 +83,16 @@ document.getElementById('login').onclick = async ()=>{
   }catch(e){ status('Login error: '+e); }
 };
 
-document.getElementById('clearChild').onclick = ()=>{
+document.getElementById('signout').onclick = ()=>{
+  ls.del(KEYS.VERIFIER);
+  ls.del(KEYS.LAST_LOGIN);
   try{
     const base = document.getElementById('childUrl').value;
     const u = new URL(base);
     u.searchParams.set('p_signout','1');
     document.getElementById('child').src = u.toString();
-    status('Requested child to clear session');
   }catch(e){}
-};
-document.getElementById('signout').onclick = ()=>{
-  ls.del(KEYS.VERIFIER);
-  ls.del(KEYS.LAST_LOGIN);
-  status('Signed out in parent. To fully sign out, use "Clear child session".');
+  status('Signed out in parent and child.');
   document.getElementById('miniStatus').textContent = '';
 };
 
@@ -102,8 +100,23 @@ document.getElementById('signout').onclick = ()=>{
 (async function(){
   const u = new URL(window.location.href);
   const code = u.searchParams.get('code');
+  const err = u.searchParams.get('error');
   const savedCode = code || null;
   const savedVerifier = ls.get(KEYS.VERIFIER);
+
+  // If no code and we haven't tried silent auth yet, attempt prompt=none
+  if(!savedCode && !err){
+    try{
+      const tried = sessionStorage.getItem('silent_tried') === '1';
+      if(!tried){
+        sessionStorage.setItem('silent_tried','1');
+        const v = await genVerifier(); ls.set(KEYS.VERIFIER, v);
+        const cc = await challengeFrom(v);
+        window.location.assign(buildAuthorizeUrl(cc, { prompt: 'none' }));
+        return; // navigation
+      }
+    }catch(e){}
+  }
 
   // Initialize iframe first so messages are delivered to the right context
   const childUrl = document.getElementById('childUrl').value;
@@ -131,13 +144,16 @@ document.getElementById('signout').onclick = ()=>{
     // Clear code from parent URL for a clean state
     frame.addEventListener('load', () => setTimeout(sendCodeToChild, 50), { once: true });
     history.replaceState({}, document.title, '/parent/index.html');
+  } else if (err) {
+    // Clear any prompt=none error from URL
+    history.replaceState({}, document.title, '/parent/index.html');
+    status('Silent auth not available (interaction required).');
   }
 
   // No message listener or token refresh in parent; child handles refresh.
   // Populate Dev info panel
   try{
     const info = [];
-    info.push('Child origin: ' + (cfg.childOrigin || 'n/a'));
     const ts = ls.get(KEYS.LAST_LOGIN);
     if(ts){
       const mins = Math.floor((Date.now()-ts)/60000);
@@ -145,8 +161,6 @@ document.getElementById('signout').onclick = ()=>{
     } else {
       info.push('Last login: n/a');
     }
-    const v = ls.get(KEYS.VERIFIER);
-    info.push('Verifier present: ' + (v ? 'yes' : 'no'));
     document.getElementById('devInfo').textContent = info.join(' \n ');
   }catch(e){}
 })();
