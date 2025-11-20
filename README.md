@@ -59,3 +59,4 @@ Threads:
 Notes:
 - PAT is ignored when an OAuth token is present.
 - With PUBLIC (PKCE) clients, Snowflake shows a consent page; to avoid re-consent, keep the session and (optionally) implement refresh.
+- have a nice day!
